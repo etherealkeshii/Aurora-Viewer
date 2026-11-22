@@ -1169,12 +1169,11 @@ fn message_color(line: &crate::world::ChatLine, p: &Palette, world: &World) -> C
     }
     let tone = history_tone(p, line.origin);
     let emote = line.text.starts_with("/me ") || line.text.starts_with("/me'");
-    message_color_override(tone, super::colors::keyword_color(line), emote, p.violet_pale)
-        .unwrap_or_else(|| match line.kind.volume() {
-            Some(ChatType::Whisper) => p.muted,
-            Some(ChatType::Shout) => p.ink,
-            _ => super::colors::chat_color(line, world),
-        })
+    message_color_override(tone, super::colors::keyword_color(line), emote, p.violet_pale).unwrap_or_else(|| match line.kind.volume() {
+        Some(ChatType::Whisper) => p.muted,
+        Some(ChatType::Shout) => p.ink,
+        _ => super::colors::chat_color(line, world),
+    })
 }
 
 /// Time of a chat line, in Second Life time as the Legacy Viewer shows it
@@ -5493,7 +5492,10 @@ mod tests {
         assert_eq!(super::message_color_override(None, None, true, emote), Some(emote));
         assert_eq!(super::message_color_override(None, Some(keyword), false, emote), Some(keyword));
         assert_eq!(super::message_color_override(None, None, false, emote), None);
-        assert_eq!(super::message_color_override(Some(history), Some(keyword), true, emote), Some(history));
+        assert_eq!(
+            super::message_color_override(Some(history), Some(keyword), true, emote),
+            Some(history)
+        );
     }
 
     #[test]

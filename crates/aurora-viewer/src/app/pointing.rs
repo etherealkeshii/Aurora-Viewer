@@ -88,7 +88,8 @@ impl App {
             points.set(None, now);
         }
         points.set(target, now);
-        let beam_target = selected.filter(|_| send_edit_beam(!self.settings.lookat.private_point_at, !self.settings.lookat.private_edit_beam));
+        let beam_target =
+            selected.filter(|_| send_edit_beam(!self.settings.lookat.private_point_at, !self.settings.lookat.private_edit_beam));
         self.update_own_beam(beam_target, now);
         let own = &mut self.world.point_at.own;
         if own.needs_send {

@@ -1152,11 +1152,6 @@ pub fn show(
                     }
                 });
             });
-        if nui.center.tab == super::notification_center::Tab::ToDo
-            && last_notification_answered(list, &answers)
-        {
-            nui.open = false;
-        }
         // click outside closes the list (not on the bell: it toggles itself)
         let clicked_out = ctx.input(|i| i.pointer.any_pressed())
             && ctx.pointer_interact_pos().is_some_and(|pos| {
