@@ -125,14 +125,14 @@ fn can_add(inv: &Inventory, id: Uuid, facts: &Facts, st: &InventoryUi) -> bool {
             && !rules::in_type(inv, it.id, 14)
             && !facts.appearance_busy
             && st.pending.is_none()
-            && facts.rlva_allows(inv, it.id, true)
+            && facts.rlva_allows(inv, crate::world::appearance::wear_entry(inv, id, it.id), true)
     })
 }
 
 fn add(inv: &Inventory, id: Uuid, actions: &mut Vec<InvAction>) {
     if let Some(original) = rules::original(inv, id) {
         actions.push(InvAction::Appearance(Wear::WearItems {
-            items: vec![original],
+            items: vec![crate::world::appearance::wear_entry(inv, id, original)],
             replace: false,
             point: 0,
         }));
@@ -192,7 +192,7 @@ fn picture(
         |it| inventory_item_icon(inv, it, p),
     );
     let size = (rect.height() * 0.42).clamp(20.0, 44.0);
-    if let Some(texture) = icons.get(icon) {
+    if let Some(texture) = icons.sized(ui.ctx(), icon, size) {
         ui.painter().image(
             texture.id(),
             Rect::from_center_size(rect.center(), Vec2::splat(size)),

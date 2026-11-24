@@ -57,9 +57,7 @@ impl Layout {
     /// The layout of the window `id` as it was last drawn (its title bar is
     /// laid out before its body).
     pub fn of_window(ctx: &egui::Context, id: &str) -> Self {
-        egui::AreaState::load(ctx, egui::Id::unique(id))
-            .and_then(|state| state.size)
-            .map_or(Self::Compact, |size| Self::for_width(size.x - 20.0))
+        widgets::floater_size(ctx, id).map_or(Self::Compact, |size| Self::for_width(size.x - 20.0))
     }
 }
 
@@ -78,9 +76,7 @@ const WIDE_SIZE: f32 = 1180.0;
 
 /// "Widen the window": the explorer with its details pane, as tall as it is.
 pub fn widen(ctx: &egui::Context, id: &str) {
-    let height = egui::AreaState::load(ctx, egui::Id::unique(id))
-        .and_then(|state| state.size)
-        .map_or(DEFAULT_SIZE.y, |size| size.y);
+    let height = widgets::floater_size(ctx, id).map_or(DEFAULT_SIZE.y, |size| size.y);
     widgets::size_floater(ctx, id, egui::vec2(WIDE_SIZE, height.max(DEFAULT_SIZE.y)));
 }
 
@@ -129,6 +125,9 @@ pub fn demo_place(ctx: &egui::Context, frame: u64) {
             }
             "aurora-wide"
             | "aurora-gallery"
+            | "aurora-system-folders"
+            | "aurora-gallery-system-folders"
+            | "aurora-filtered"
             | "aurora-gallery-large"
             | "aurora-combination"
             | "aurora-worn-wide"

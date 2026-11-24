@@ -52,7 +52,7 @@ fn paint_icon(ui: &egui::Ui, icons: &Icons, name: &str, center: Pos2, tint: Colo
     if let Some(texture) = icons.get(name) {
         ui.painter().image(
             texture.id(),
-            Rect::from_center_size(center, Vec2::splat(ICON)),
+            Rect::from_center_size(center, Vec2::splat(super::super::category::row_icon_size(name, ICON))),
             Rect::from_min_max(Pos2::ZERO, egui::pos2(1.0, 1.0)),
             tint,
         );
@@ -278,7 +278,7 @@ pub(super) fn show_quick(
                                 InvAction::WearCopy { item, replace: false }
                             } else {
                                 InvAction::Appearance(crate::world::appearance::Action::WearItem {
-                                    item,
+                                    item: crate::world::appearance::wear_entry(inv, id, item),
                                     replace: false,
                                     point: 0,
                                 })
