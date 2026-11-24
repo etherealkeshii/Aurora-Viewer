@@ -4562,6 +4562,13 @@ impl App {
                 } else {
                     crate::world::favorites::Favorites::load(crate::settings::account_dir(&l.agent_id).join(crate::world::favorites::FILE))
                 };
+                // where the Trash's entries came from (Restore to their
+                // folder); the demo keeps them in memory
+                if !self.demo {
+                    self.world.inventory.trash_origins = crate::world::inventory::trash_origins::TrashOrigins::load(
+                        crate::settings::account_dir(&l.agent_id).join(crate::world::inventory::trash_origins::FILE),
+                    );
+                }
                 // the environments saved for parcels, on the grid of the
                 // login; the demo keeps them in memory
                 self.world.parcel_env.saves = if self.demo {
@@ -11027,6 +11034,7 @@ impl App {
             self.pump_network_events(t_ev);
         }
         self.poll_inventory_offers();
+        self.world.inventory.trash_origins.poll();
         self.net_profile.events_left(self.net.events.len());
         let corrections = self.world.agent.take_corrections();
         if corrections.count > 0 {
@@ -24028,6 +24036,7 @@ impl ApplicationHandler for App {
                         | "aurora-favorites-parents"
                         | "aurora-folder-window"
                         | "aurora-folder-window-wide"
+                        | "aurora-single-folder-window"
                         | "additional"
                         | "aurora-additional"
                         | "show-original"
@@ -24043,8 +24052,14 @@ impl ApplicationHandler for App {
                         | "aurora-explorer-path"
                         | "aurora-explorer-menu"
                         | "aurora-explorer-medium"
+                        | "aurora-explorer-undo"
+                        | "aurora-explorer-tabs"
+                        | "aurora-explorer-split"
                 );
                 if configured_view {
+                    // the demo's settings outlive a run: each scenario
+                    // states the dual-panel layout (the split view's) itself
+                    self.panels.inventory_dual = view == "aurora-explorer-split";
                     crate::world::inventory::demo::seed_view(
                         &mut self.world.inventory,
                         self.world.agent_id,
@@ -24202,6 +24217,14 @@ impl ApplicationHandler for App {
                             // Back, Up, the breadcrumb's chevrons and two
                             // folders pinned to Quick access
                             self.inventory_ui.demo_explorer(&view);
+                            if view == "aurora-explorer-undo" {
+                                // a Delete to undo, a rename to redo
+                                self.world.inventory.demo_history(self.world.agent_id);
+                            }
+                            if view == "aurora-explorer-split" {
+                                // the split view: two explorers side by side
+                                self.dual_inventory_ui.demo_explorer("aurora-explorer-split-right");
+                            }
                             // the column lists a pin once its folder is there
                             self.settings.inventory.pinned = vec![uuid::Uuid::from_u128(8000), uuid::Uuid::from_u128(8001)];
                             self.panels.camera_controls = false;
@@ -24209,6 +24232,13 @@ impl ApplicationHandler for App {
                         if view.starts_with("aurora-folder-window") {
                             // the right-click tests in a window of their own
                             self.inventory_ui.open_folder_window(uuid::Uuid::from_u128(8000));
+                            if let Some(window) = self.inventory_ui.windows.last_mut() {
+                                window.id = ui::inventory::AURORA_DEMO_FOLDER_WINDOW;
+                            }
+                        }
+                        if view == "aurora-single-folder-window" {
+                            // "Open in a new window" on the right-click tests
+                            self.inventory_ui.open_single_folder_window(uuid::Uuid::from_u128(8000));
                             if let Some(window) = self.inventory_ui.windows.last_mut() {
                                 window.id = ui::inventory::AURORA_DEMO_FOLDER_WINDOW;
                             }
@@ -24496,6 +24526,8 @@ impl ApplicationHandler for App {
                             }
                             .into(),
                         });
+                    } else if view == "single-folder-window" {
+                        self.inventory_ui.open_single_folder_window(id);
                     } else if matches!(view.as_str(), "folder-window" | "folder-window-search") {
                         self.inventory_ui.open_folder_window(id);
                         if view == "folder-window-search"
