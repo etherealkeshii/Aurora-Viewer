@@ -50,9 +50,10 @@ jobs:
           echo "Verified distribution commit: $tagged_commit"
 
   windows:
-    needs: authorize
+    needs: [authorize, macos]
     if: needs.authorize.result == 'success'
     runs-on: windows-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     env:
@@ -69,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           $env:AURORA_VERSION_TAG = $env:TAG
-          cargo build --release --locked -p aurora-viewer --features xr-static-loader
+          cargo build --release --locked --verbose --timings -p aurora-viewer --features xr-static-loader
       - name: Verify compiled version
         shell: pwsh
         run: |
@@ -114,9 +115,10 @@ jobs:
           compression-level: 0
           retention-days: 7
   linux:
-    needs: authorize
+    needs: [authorize, windows]
     if: needs.authorize.result == 'success'
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -136,7 +138,7 @@ jobs:
           CARGO_PROFILE_RELEASE_STRIP: debuginfo
         run: |
           export AURORA_VERSION_TAG="$TAG"
-          cargo build --release --locked -p aurora-viewer
+          cargo build --release --locked --verbose --timings -p aurora-viewer
       - name: Verify compiled version
         shell: pwsh
         run: ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer-Keshii -Tag $env:TAG
@@ -165,6 +167,7 @@ jobs:
     needs: authorize
     if: needs.authorize.result == 'success'
     runs-on: macos-15
+    timeout-minutes: 90
     env:
       TAG: ${{ github.ref_name }}
       APP: Aurora Viewer-Keshii.app
@@ -181,7 +184,7 @@ jobs:
           CARGO_PROFILE_RELEASE_STRIP: debuginfo
         run: |
           export AURORA_VERSION_TAG="$TAG"
-          cargo build --release --locked -p aurora-viewer
+          cargo build --release --locked --verbose --timings -p aurora-viewer
       - name: Verify compiled version
         shell: pwsh
         run: ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer-Keshii -Tag $env:TAG
