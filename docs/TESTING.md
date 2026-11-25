@@ -2156,7 +2156,7 @@ when unfocused") is ignored during a screenshot.
 
 **UI rendering feature details.** `AURORA_DEMO_UI_FEATURE=off` unticks Advanced › Rendering features › UI at frame 600, as Ctrl+Alt+F1 (Ctrl+Shift+F1 on Linux) does: capture at frame 700 or later. Only the world is left: no bar, window, toast, chat line, name tag, floating text, beacon nor selection outline; the HUD attachments stay (with `AURORA_DEMO_HUDS=1`), and so does RLVa's overlay (`AURORA_DEMO_RLVA=overlay`). The clicks go to the world, and the shortcut brings everything back where it was, the hidden interface (Alt+Shift+U) or immersive mode included. `cycle` turns it back on at frame 900: capture at frame 1000 to see the interface again. The grid check compares Advanced › Rendering Features › UI of the Legacy Viewer in a busy region.
 
-**Release keys details.** `AURORA_DEMO_RELEASE_KEYS=1` makes a vehicle script take the arrow keys and Page Up / Down at frame 400 (taken, not passed on), as llTakeControls does. Advanced › Release keys is then enabled (it is greyed without the variable); choosing it sends ForceScriptControlRelease, the demo region answers with the releases and the entry is greyed again. With `AURORA_DEMO_MENU_SEARCH=` a word of the label in the interface's language (`release` in English, `touches` in French), `AURORA_FPS_LIMIT=60` and a capture at frame 640, the entry shows under Advanced in the wolf menu's search. The demo does not block the avatar's movement while the keys are taken (the region does that on the grid).
+**Release keys details.** `AURORA_DEMO_RELEASE_KEYS=1` makes a vehicle script take the arrow keys and Page Up / Down at frame 400 (taken, not passed on), as llTakeControls does. Advanced › Release keys is then enabled (it is greyed without the variable); choosing it sends ForceScriptControlRelease, the demo region answers with the releases and the entry is greyed again. With `AURORA_DEMO_MENU_SEARCH=` a word of the label in the interface's language (`release` in English, `touches` in French), `AURORA_FPS_LIMIT=60` and a capture at frame 640, the entry shows under Advanced in the wolf menu's search. From frame 400 the script has taken left/right outright, so those keys do not turn the avatar or the camera ([#3450](https://github.com/Aurora-Viewer/Aurora-Viewer/issues/3450)). Walking keys still move the avatar in this offline demo; on a grid the region is what stops them. Choosing Release keys restores turning.
 
 
 ### Details
@@ -2767,10 +2767,12 @@ leaves a drag running: the far-selection check waits for the drag to end.
 
 `AURORA_DEMO_BUILD=rect,<x>,<y>,-,<dx>,<dy>` presses the Edit tool at a pixel
 through the real click path, drags and releases; `rect,object:<id>,-,<dx>,<dy>`
-presses on an object. `rect-shift` holds Shift, `rect-focus` loses the window
-focus and `rect-tool` changes tool with the button down, and `keep:<id>` at the
-end selects an object first. The `demo rect:` lines of the log give the
-selection and its space before, during and after the gesture.
+presses on an object. `rect-shift` holds Shift and `rect-ctrl` Ctrl (a deselect
+rectangle, whose box turns red; with `object:<id>`, the box surrounds that
+prim); `rect-focus` loses the window focus and `rect-tool` changes tool with
+the button down; `keep:<id>` (repeat it for several objects) selects objects
+first. The `demo rect:` lines of the log give the selection and its space
+before, during and after the gesture.
 
 `AURORA_DEMO_BUILD=cycle,object:99610` adds three nested objects, two of
 them linksets, selects A then simulates two notches towards the back and one
@@ -6857,7 +6859,6 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_SHAPE=<mode>` | Worn shape editor and permission scenarios |
 | `AURORA_DEMO_SHAPE_XML=<file>` | With `AURORA_DEMO_SHAPE`: imports an appearance XML into the shape draft |
 | `AURORA_DEMO_SHAPE_XML_EXPORT=<file>` | With `AURORA_DEMO_SHAPE`: exports the shape draft to an appearance XML |
-| `AURORA_DEMO_SHAPE_XML_MENU=<file>` | With `AURORA_DEMO_SHAPE`: Appearance › Export shape XML of our avatar's menu |
 | `AURORA_DEMO_WEARABLE=<type>[:mode]` | Skin, hair, eyes and system clothing editors |
 | `AURORA_DEMO_PHYSICS_EDIT=1\|new\|drag` | Physics layer editor: a worn layer, "New physics", sliders moving |
 | `AURORA_DEMO_AVATAR_HEALTH=undeform\|refresh` | Me › Avatar health's Undeform avatar or Refresh attachments at frame 600 |
@@ -11558,11 +11559,6 @@ dialog: one `<param>` per shape parameter, no texture or other id; the footer
 says where it was saved. `readonly` (no modify rights) refuses it with the
 "needs modify rights" message, and the button is greyed out. The file reads
 back with `AURORA_DEMO_SHAPE_XML`.
-`AURORA_DEMO_SHAPE_XML_MENU=<file>` runs Appearance › Export shape XML of our
-avatar's right-click menu without its save dialog: the worn shape's asset is
-read (not the editor's draft) and written as the button does, then a notice
-in the nearby chat says where. With `readonly` nothing is written and the
-menu entry is greyed out.
 Opening the editor stands our avatar up (a seated avatar leaves its seat, as
 in the Legacy Viewer), and while the editor is open our avatar plays the
 customise animation (not the physics layer editor, which keeps the camera,
