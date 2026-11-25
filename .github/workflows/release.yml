@@ -70,7 +70,39 @@ jobs:
         shell: pwsh
         run: |
           $env:AURORA_VERSION_TAG = $env:TAG
-          cargo build --release --locked --verbose --timings -p aurora-viewer --features xr-static-loader
+          $monitor = Start-Job -ScriptBlock {
+              while ($true) {
+                  $os = Get-CimInstance Win32_OperatingSystem
+                  $cpu = Get-CimInstance Win32_Processor
+                  $usage = ($cpu | Measure-Object -Property LoadPercentage -Average).Average
+                  $free = [math]::Round($os.FreePhysicalMemory / 1MB, 2)
+                  $total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+                  Write-Output "[BUILD MONITOR] CPU: $usage% | Free RAM: $free / $total GiB"
+                  Get-Process -Name cargo,rustc,link,lld-link -ErrorAction SilentlyContinue |
+                      Select-Object ProcessName,Id,CPU,@{Name='RAM_MB';Expression={[math]::Round($_.WorkingSet64 / 1MB)}},@{Name='Threads';Expression={$_.Threads.Count}} |
+                      Format-Table -AutoSize | Out-String | Write-Output
+                  Start-Sleep -Seconds 60
+              }
+          }
+          $build = $null
+          try {
+              $build = Start-Process -FilePath cargo -ArgumentList @(
+                  'build', '--release', '--locked', '--verbose', '--timings',
+                  '-p', 'aurora-viewer', '--features', 'xr-static-loader'
+              ) -NoNewWindow -PassThru
+              while (-not $build.HasExited) {
+                  Receive-Job -Job $monitor
+                  Start-Sleep -Seconds 5
+                  $build.Refresh()
+              }
+              Receive-Job -Job $monitor
+              if ($build.ExitCode -ne 0) {
+                  throw "Cargo build failed with exit code $($build.ExitCode)"
+              }
+          } finally {
+              Stop-Job -Job $monitor
+              Remove-Job -Job $monitor -Force
+          }
       - name: Verify compiled version
         shell: pwsh
         run: |
