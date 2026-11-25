@@ -18585,6 +18585,8 @@ impl App {
             ctx.memory_mut(|m| m.set_modal_layer(egui::Modal::default_area(egui::Id::unique("viewer_exit")).layer()));
         }
         // the update card is interface too (Ctrl+Alt+F1)
+        self.updater.present_keshii_expiry(matches!(self.screen, Screen::Login));
+
         a.update_quit = !self.exit_prompt.open
             && !self.interface.ui_off
             && ui::update::show_real(

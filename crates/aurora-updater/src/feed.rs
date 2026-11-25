@@ -9,8 +9,8 @@ use semver::Version;
 use serde::Deserialize;
 use std::time::Duration;
 
-pub const RELEASES: &str = "https://api.github.com/repos/Aurora-Viewer/Aurora-Viewer/releases?per_page=100";
-pub const RELEASE_PAGE: &str = "https://github.com/Aurora-Viewer/Aurora-Viewer/releases";
+pub const RELEASES: &str = "https://api.github.com/repos/etherealkeshii/Aurora-Viewer/releases?per_page=100";
+pub const RELEASE_PAGE: &str = "https://github.com/etherealkeshii/Aurora-Viewer/releases";
 const DOWNLOADS: &str = "https://github.com/Aurora-Viewer/Aurora-Viewer/releases/download";
 pub const POLICY: &str = "aurora-update-policy.json";
 pub const MAX_ARCHIVE: u64 = 2 * 1024 * 1024 * 1024;
@@ -238,7 +238,11 @@ impl Source {
                 let v = version(&r.tag_name)?;
                 // GitHub's pre-release flag must agree with the version: a
                 // stable number marked pre-release (or the reverse) is skipped.
-                (r.tag_name.starts_with('v') && !r.draft && r.prerelease == !v.pre.is_empty() && channel.accepts(&v)).then_some((v, r))
+                ((if self.loopback {
+                    r.tag_name.starts_with('v')
+                } else {
+                    r.tag_name.ends_with("-Keshii")
+                }) && !r.draft && r.prerelease == !v.pre.is_empty() && (!self.loopback || channel.accepts(&v))).then_some((v, r))
             })
             .filter(|(v, _)| super::is_newer(&v.to_string(), current))
             .collect();
@@ -321,7 +325,7 @@ impl Source {
             ensure!(policy.schema == 1 && policy.version == v.to_string(), "incompatible update policy");
             maintenance.clear_cache = threshold_applies(policy.cache_invalidation_before.as_deref(), current, &v)?;
             maintenance.reset_settings = threshold_applies(policy.settings_reset_before.as_deref(), current, &v)?;
-            if let Some(min) = policy.minimum_supported_version {
+            if self.loopback && let Some(min) = policy.minimum_supported_version {
                 let min = version(&min).context("invalid minimum supported version")?;
                 ensure!(
                     min.pre.is_empty() && min.build.is_empty() && !min.cmp_precedence(&v).is_gt(),
@@ -330,14 +334,18 @@ impl Source {
                 required = version(current).is_some_and(|c| c.cmp_precedence(&min).is_lt());
                 minimum = Some(min.to_string());
             }
-            if let Some(hours) = policy.grace_hours {
+            if self.loopback && let Some(hours) = policy.grace_hours {
                 ensure!(hours <= MAX_GRACE_HOURS, "invalid grace period");
                 grace = Duration::from_secs(hours * 3600);
             }
         }
         Ok(Release {
+            version: if self.loopback {
+                v.to_string()
+            } else {
+                r.tag_name.clone()
+            },
             tag: r.tag_name,
-            version: v.to_string(),
             notes: r.body.unwrap_or_default(),
             url: r.html_url,
             sha256: archive.is_some().then_some(signed.sha256),
@@ -351,7 +359,9 @@ impl Source {
 }
 
 pub fn version(value: &str) -> Option<Version> {
-    Version::parse(value.strip_prefix('v').unwrap_or(value)).ok()
+    let value = value.strip_prefix('v').unwrap_or(value);
+    let value = value.strip_suffix("-Keshii").unwrap_or(value);
+    Version::parse(value).ok()
 }
 
 /// The file whose signed `.sha256` vouches for a release on this system:
@@ -359,7 +369,11 @@ pub fn version(value: &str) -> Option<Version> {
 /// viewer still points only to a genuine release).
 fn signed_name(tag: &str) -> Option<String> {
     if cfg!(target_os = "macos") {
-        Some(format!("Aurora-Viewer-{tag}-macos-arm64.dmg"))
+        Some(if tag.ends_with("-Keshii") {
+            format!("Aurora-Viewer-{tag}-macOS-arm64.dmg")
+        } else {
+            format!("Aurora-Viewer-{tag}-macos-arm64.dmg")
+        })
     } else {
         package_name(tag)
     }
@@ -503,7 +517,7 @@ mod tests {
         let production = Source::default();
         assert!(
             production
-                .validate_url("https://github.com/Aurora-Viewer/Aurora-Viewer/releases")
+                .validate_url("https://github.com/etherealkeshii/Aurora-Viewer/releases")
                 .is_ok()
         );
         for url in [

@@ -31,8 +31,7 @@ pub type Key = [u8; 32];
 /// (docs/UPDATES.md, "Changing the key").
 pub const RELEASE_KEYS: &[&str] = &[
     // release-keys-begin
-    // UPDATE_SIGNING_KEY_NEXT, 2026-11-23
-    "4eaa4034d0643e00a0d9daeddfb6f1b6f683a509a03c526c3673e71ee5c0034d",
+    "d6f635ae5649fbd350c2b84a760a9b903ac55ce7fd6fb1eb265ec5dd62ad1e94",
     // release-keys-end
 ];
 

@@ -308,14 +308,14 @@ pub fn show_real(
                     State::Checking => aurora_i18n::tr!("ui-login-checking"),
                     State::Downloading(_) | State::Handoff => aurora_i18n::tr!("update-downloading-title"),
                     State::Ready => aurora_i18n::tr!("update-ready-title"),
+                    _ if required || grace_hours.is_some() => aurora_i18n::tr!("update-required-title"),
                     State::Error(_) | State::Rollback => aurora_i18n::tr!("update-error-title"),
                     State::Current => aurora_i18n::tr!("ui-login-up-to-date"),
-                    _ if required || grace_hours.is_some() => aurora_i18n::tr!("update-required-title"),
                     _ => aurora_i18n::tr!("update-title"),
                 };
                 ui.label(RichText::new(title).size(23.0).strong().color(p.ink));
             });
-            if let Some(r) = &updater.release {
+            if updater.release.is_some() || required || grace_hours.is_some() {
                 ui.label(
                     RichText::new(if let Some(hours) = grace_hours {
                         aurora_i18n::tr!("update-grace", hours = hours)
@@ -327,6 +327,9 @@ pub fn show_real(
                     .size(13.0)
                     .color(p.muted),
                 );
+            }
+
+            if let Some(r) = &updater.release {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     let card = (width - 44.0) / 2.0;
@@ -489,6 +492,19 @@ pub fn show_real(
                     }
                 }
                 State::Checking | State::Current | State::Idle => {
+                    if required || grace_hours.is_some() {
+                        if primary_button_sized(
+                            ui,
+                            p,
+                            aurora_i18n::tr!("update-open-release"),
+                            Vec2::new(width, 34.0),
+                        ).clicked() {
+                            ctx.open_url(egui::OpenUrl::new_tab(
+                                aurora_updater::feed::RELEASE_PAGE,
+                            ));
+                        }
+                    }
+
                     if flat_button_sized(ui, p, aurora_i18n::tr!("common-close"), Vec2::new(width, 34.0)).clicked() {
                         updater.open = false;
                     }
