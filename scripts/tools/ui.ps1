@@ -8,7 +8,7 @@ $Interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRe
 $Esc = [char]27
 # In the paths the screens name, and the launcher's name, as this system has them.
 $DirSep = [IO.Path]::DirectorySeparatorChar
-$LauncherName = if ($IsLinux) { 'aurora-tools.sh' } else { 'aurora-tools.cmd' }
+$LauncherName = if (-not $IsWindows) { 'aurora-tools.sh' } else { 'aurora-tools.cmd' }
 
 # Aurora palette (docs/BRANDING.md).
 $Palette = @{
@@ -63,12 +63,18 @@ function Start-Detached([string]$Program, [string[]]$Arguments = @()) {
 
 # A folder or a URL, in the program the desktop has for it.
 function Open-External([string]$Target) {
-    if ($IsLinux) { Start-Detached 'xdg-open' @($Target) } else { Start-Process $Target }
+    if ($IsMacOS) { & /usr/bin/open $Target }
+    elseif ($IsLinux) { Start-Detached 'xdg-open' @($Target) }
+    else { Start-Process $Target }
 }
 
 # $false when this machine has nothing to copy with (Linux without wl-clipboard,
 # xclip or xsel).
 function Copy-ToClipboard([string]$Text) {
+    if ($IsMacOS) {
+        $Text | & /usr/bin/pbcopy
+        return ($LASTEXITCODE -eq 0)
+    }
     if (-not $IsLinux) { Set-Clipboard -Value $Text; return $true }
     $tools = @(
         if ($env:WAYLAND_DISPLAY) { , @('wl-copy') }
@@ -96,6 +102,7 @@ function Show-Logo([string]$Subtitle) {
     Write-Aurora '    ▄▀█ █ █ █▀█ █▀█ █▀█ ▄▀█'
     Write-Aurora '    █▀█ █▄█ █▀▄ █▄█ █▀▄ █▀█'
     Write-Color "    V  I  E  W  E  R    ·  $Subtitle" violet_light
+    Write-Color "    By ケシイ (Keshii Ethereal)" teal
     Write-Host ''
 }
 

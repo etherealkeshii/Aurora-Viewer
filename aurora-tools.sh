@@ -4,7 +4,7 @@
 # from the repository or the project folder with PowerShell 7 and passes its
 # arguments on, for example ./aurora-tools.sh -Action diagnose. Alone in a folder,
 # downloads the installer and installs the project there. It follows symlinks.
-self=$(readlink -f -- "$0") || exit 1
+self=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0") || exit 1
 here=$(dirname -- "$self")
 # Double-clicked: open a terminal, as Windows opens a console for a .cmd.
 if [ $# -eq 0 ] && [ ! -t 0 ] && [ ! -t 1 ] && [ -z "$AURORA_TOOLS_IN_TERMINAL" ] && { [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ]; }; then
@@ -23,8 +23,5 @@ cd "$here" || exit 1
 for script in "$here/scripts/tools/aurora-tools.ps1" "$here/aurora-viewer/scripts/tools/aurora-tools.ps1" "$here/Aurora-Viewer/scripts/tools/aurora-tools.ps1"; do
     [ -f "$script" ] && exec pwsh -NoProfile -File "$script" "$@"
 done
-pwsh -NoProfile -Command '$f = Join-Path ([IO.Path]::GetTempPath()) "aurora-setup.ps1"; irm https://raw.githubusercontent.com/Aurora-Viewer/Aurora-Viewer/main/scripts/setup.ps1 -OutFile $f; & $f'
-code=$?
-printf 'Press Enter to close. '
-read -r _
-exit "$code"
+echo 'Aurora Tools-Keshii: existing repository not found.' >&2
+exit 1

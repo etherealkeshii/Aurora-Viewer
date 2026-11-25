@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Builds "Aurora Viewer.app" from the built viewer: the executable in
+    Builds "Aurora Viewer-Keshii.app" from the built viewer: the executable in
     Contents/MacOS, the files of package.ps1 (licences, notices, install
     metadata) with the icon and the translated texts of Info.plist in
     Contents/Resources. The macOS job of the release runs it (PowerShell 7);
     signing and notarization come after, in the workflow.
 .EXAMPLE
-    ./scripts/package-macos.ps1 -Exe target/release/aurora-viewer -Out "Aurora Viewer.app"
+    ./scripts/package-macos.ps1 -Exe target/release/aurora-viewer-Keshii -Out "Aurora Viewer-Keshii.app"
 #>
 param(
     [Parameter(Mandatory)][string]$Exe,
@@ -25,7 +25,7 @@ New-Item -ItemType Directory -Force -Path $macos, $resources | Out-Null
 # the files every package carries, then the executable where macOS runs it
 # (code only in Contents/MacOS: the signature seals the rest as resources)
 & (Join-Path $PSScriptRoot 'package.ps1') -Exe $Exe -Out $resources -Source $Source
-Move-Item -LiteralPath (Join-Path $resources (Split-Path $Exe -Leaf)) -Destination (Join-Path $macos 'aurora-viewer')
+Move-Item -LiteralPath (Join-Path $resources (Split-Path $Exe -Leaf)) -Destination (Join-Path $macos 'aurora-viewer-Keshii')
 
 # MAJOR.MINOR.PATCH of the build, the only form CFBundleShortVersionString
 # takes (a beta's pre-release part and the commits since the tag are left out)
@@ -39,4 +39,4 @@ Copy-Item -LiteralPath (Join-Path $Source 'assets/branding/aurora.icns') -Destin
 Get-ChildItem -LiteralPath (Join-Path $Source 'packaging/macos') -Directory -Filter '*.lproj' | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $resources -Recurse
 }
-"${Out}: Aurora Viewer $version"
+"${Out}: Aurora Viewer-Keshii $version"

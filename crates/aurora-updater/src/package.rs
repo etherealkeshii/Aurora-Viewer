@@ -61,8 +61,8 @@ impl Format {
     /// system's: the tests extract the packages of both on any system.
     fn exe(self) -> &'static str {
         match self {
-            Self::Zip => "aurora-viewer.exe",
-            Self::TarGz => "aurora-viewer",
+            Self::Zip => "aurora-viewer-Keshii.exe",
+            Self::TarGz => "aurora-viewer-Keshii",
         }
     }
 }
@@ -412,8 +412,8 @@ mod tests {
     fn each_format_names_its_own_package_layout() {
         assert_eq!(Format::Zip.root("v1.2.3"), "Aurora-Viewer-v1.2.3-windows-x64");
         assert_eq!(Format::TarGz.root("v1.2.3"), "Aurora-Viewer-v1.2.3-linux-x64");
-        assert_eq!(Format::Zip.exe(), "aurora-viewer.exe");
-        assert_eq!(Format::TarGz.exe(), "aurora-viewer");
+        assert_eq!(Format::Zip.exe(), "aurora-viewer-Keshii.exe");
+        assert_eq!(Format::TarGz.exe(), "aurora-viewer-Keshii");
         assert_eq!(Format::Zip.file(), "download.zip");
         assert_eq!(Format::TarGz.file(), "download.tar.gz");
     }

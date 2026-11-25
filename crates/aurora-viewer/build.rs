@@ -2,7 +2,7 @@
 //! window title ("Aurora Viewer <version> (Dev)"): cargo only exposes `debug` /
 //! `release` (PROFILE), while the profile's target directory names the
 //! custom ones (`debugging`, `ci`). On Windows it also embeds the resources
-//! of aurora-viewer.exe: its icon and its version block.
+//! of aurora-viewer-Keshii.exe: its icon and its version block.
 
 use std::path::Path;
 
@@ -88,15 +88,15 @@ fn windows_resources() {
 
     let mut res = winresource::WindowsResource::new();
     res.set_icon(&icon.to_string_lossy())
-        .set("ProductName", "Aurora Viewer")
-        .set("FileDescription", "Aurora Viewer")
-        .set("OriginalFilename", "aurora-viewer.exe")
+        .set("ProductName", "Aurora Viewer-Keshii")
+        .set("FileDescription", "Aurora Viewer-Keshii")
+        .set("OriginalFilename", "aurora-viewer-Keshii.exe")
         .set("ProductVersion", &display)
         .set("FileVersion", &display)
         .set_version_info(winresource::VersionInfo::PRODUCTVERSION, packed)
         .set_version_info(winresource::VersionInfo::FILEVERSION, packed);
     // the viewer only: the test binaries of this crate need no resources
-    if let Err(error) = res.compile_for("aurora-viewer") {
-        panic!("Cannot embed the icon and version of aurora-viewer.exe (rc.exe of the Windows SDK): {error}");
+    if let Err(error) = res.compile_for("aurora-viewer-Keshii") {
+        panic!("Cannot embed the icon and version of aurora-viewer-Keshii.exe (rc.exe of the Windows SDK): {error}");
     }
 }

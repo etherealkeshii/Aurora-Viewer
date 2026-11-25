@@ -17,7 +17,7 @@ $SearchTools = @(
 function Get-Paths([string]$Root) {
     [pscustomobject]@{
         Root = $Root
-        Repo = Join-Path $Root 'aurora-viewer'
+        Repo = $(if ($IsMacOS) { Split-Path (Split-Path $PSScriptRoot -Parent) -Parent } else { Join-Path $Root 'aurora-viewer' })
         Firestorm = Join-Path $Root 'phoenix-firestorm'
         Work = Join-Path $Root 'work'
         Release = Join-Path $Root 'RELEASE'
@@ -100,6 +100,7 @@ function Get-LinuxPackages([string]$Id) {
 
 # The "What I do" column for a missing tool.
 function Get-InstallText([string]$Id, [string]$What, [string]$Windows) {
+    if ($IsMacOS) { return 'installed with Homebrew or Xcode Command Line Tools' }
     if (-not $IsLinux) { return $Windows }
     if ($Id -eq 'Rustlang.Rustup' -and -not (Get-LinuxPackages $Id)) { return 'installed with rustup.rs (for your account)' }
     $manager = Get-LinuxPackageManager
@@ -131,7 +132,7 @@ function Install-LinuxTool([string]$Id, [string]$What) {
 }
 
 function Get-MsvcName {
-    if ($IsLinux) { return }
+    if (-not $IsWindows) { return }
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path $vswhere) {
         & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName | Select-Object -First 1
@@ -148,7 +149,12 @@ function Get-Checks($P, [switch]$Offline) {
     & $add (New-Check git 'Git' $git $(if ($git) { 'ok' } else { 'todo' }) $(if ($git) { 'nothing to do' } else { Get-InstallText 'Git.Git' 'Git' 'installed with winget, for the whole machine' }))
     $gh = if (Get-Command gh -ErrorAction SilentlyContinue) { (gh --version | Select-Object -First 1) -replace '^gh version\s+(\S+).*$', '$1' }
     & $add (New-Check gh 'GitHub CLI' $gh $(if ($gh) { 'ok' } else { 'todo' }) $(if ($gh) { 'nothing to do' } else { Get-InstallText 'GitHub.cli' 'GitHub CLI' 'installed with winget, for the whole machine' }))
-    if ($IsLinux) {
+    if ($IsMacOS) {
+        $xcode = xcode-select -p 2>$null
+        $ready = $LASTEXITCODE -eq 0 -and $xcode
+        & $add (New-Check build 'Xcode Command Line Tools' $xcode $(if ($ready) { 'ok' } else { 'todo' }) $(if ($ready) { 'nothing to do' } else { 'xcode-select --install' }))
+        & $add (New-Check desktop 'Desktop tools' 'open, pbcopy' ok 'nothing to do')
+    } elseif ($IsLinux) {
         $missing = Get-MissingBuildTools
         if ($missing) { & $add (New-Check build 'Build tools' "without $($missing -join ', ')" stale (Get-InstallText 'BuildTools' 'the build tools' '')) }
         else { & $add (New-Check build 'Build tools' 'cc, cmake, clang, pkg-config' ok 'nothing to do') }
@@ -271,6 +277,24 @@ function Update-SessionPath {
 }
 
 function Install-Tool([string]$Id, [string]$What, [string[]]$Extra = @()) {
+    if ($IsMacOS) {
+        $packages = @{
+            'Git.Git' = 'git'
+            'GitHub.cli' = 'gh'
+            'Rustlang.Rustup' = 'rustup'
+            'Mozilla.sccache' = 'sccache'
+            'BurntSushi.ripgrep.MSVC' = 'ripgrep'
+            'sharkdp.fd' = 'fd'
+            'jqlang.jq' = 'jq'
+            'ast-grep.ast-grep' = 'ast-grep'
+        }
+        if (-not (Get-Command brew -ErrorAction SilentlyContinue)) { throw 'Homebrew is required.' }
+        $package = $packages[$Id]
+        if (-not $package) { throw "No Homebrew package configured for $What." }
+        brew install $package
+        if ($LASTEXITCODE -ne 0) { throw "Installing $What failed." }
+        return
+    }
     if ($IsLinux) { Install-LinuxTool $Id $What; return }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         throw "$What is missing, and winget (the Windows package manager) is not available: install it by hand."
@@ -301,7 +325,10 @@ function Invoke-Repair($P) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { Install-Tool 'GitHub.cli' 'GitHub CLI' @('--scope', 'machine') }
     # Rust on Windows links with the Visual Studio C++ tools (MSVC and the
     # Windows SDK): install them before Rust.
-    if ($IsLinux) {
+    if ($IsMacOS) {
+        xcode-select -p *> $null
+        if ($LASTEXITCODE -ne 0) { throw 'Install Xcode Command Line Tools using xcode-select --install first.' }
+    } elseif ($IsLinux) {
         if (Get-MissingBuildTools) { Install-Tool 'BuildTools' 'the build tools' }
         if (Get-MissingDesktopTools) { Install-Tool 'DesktopTools' 'the desktop tools' }
     } elseif (-not (Get-MsvcName)) {
@@ -312,7 +339,7 @@ function Invoke-Repair($P) {
     # without admin rights (%USERPROFILE%\.cargo and .rustup).
     if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
         Install-Tool 'Rustlang.Rustup' 'Rust (rustup)'
-        if ($IsLinux) { $env:PATH += ":$HOME/.cargo/bin" } else { $env:Path += ";$env:USERPROFILE\.cargo\bin" }
+        if (-not $IsWindows) { $env:PATH += ":$HOME/.cargo/bin" } else { $env:Path += ";$env:USERPROFILE\.cargo\bin" }
         if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
             throw 'rustup not found after its installation: open a new window and run it again.'
         }
@@ -323,16 +350,15 @@ function Invoke-Repair($P) {
     New-Item -ItemType Directory -Force -Path $P.Root -ErrorAction Stop | Out-Null
     if (Test-Path (Join-Path $P.Repo '.git')) {
         $branch = (git -C $P.Repo rev-parse --abbrev-ref HEAD).Trim()
-        if ($branch -eq 'main' -and -not (git -C $P.Repo status --porcelain --untracked-files=no)) {
-            git -C $P.Repo pull --ff-only --quiet
+        if ($branch -eq 'keshii/distribution' -and -not (git -C $P.Repo status --porcelain --untracked-files=no)) {
+            git -C $P.Repo pull --ff-only --quiet fork keshii/distribution
             if ($LASTEXITCODE -ne 0) { Write-Color '  main not updated (git pull failed): left as is.' warn }
             else { Write-Color "  $($P.Repo): up to date." success }
         } else {
             Write-Color "  On '$branch' or with local changes: left as is." warn
         }
     } else {
-        git clone $RepoUrl $P.Repo
-        if ($LASTEXITCODE -ne 0) { throw 'cloning the repository.' }
+        throw 'The existing Keshii development repository must be present.'
     }
     New-Item -ItemType Directory -Force -Path $P.Work | Out-Null
 

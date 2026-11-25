@@ -31,7 +31,7 @@ $ErrorActionPreference = 'Continue'
 foreach ($m in @('ui.ps1') + @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter *.ps1 | Where-Object { $_.Name -notin 'ui.ps1', 'aurora-tools.ps1' } | ForEach-Object Name)) {
     . (Join-Path $PSScriptRoot $m)
 }
-if ($Interactive) { $Host.UI.RawUI.WindowTitle = 'Aurora Tools' }
+if ($Interactive) { $Host.UI.RawUI.WindowTitle = 'Aurora Tools-Keshii' }
 # gh, git and cargo write UTF-8; the console decodes their output with its
 # OEM code page by default (accents of PR titles came out garbled)
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
@@ -155,7 +155,7 @@ function Show-Main {
         $items = @()
         if ($problems) { $items += @{ Key = 'r'; Label = "Repair / update ($($problems.Count))"; Hint = 'installs what is missing, updates the rest' } }
         $items += @(
-            @{ Key = '1'; Label = 'Release viewer'; Hint = "latest main from GitHub, --release, in RELEASE$DirSep" }
+            @{ Key = '1'; Label = 'Release viewer'; Hint = "tagged distribution checkout, --release, in RELEASE$DirSep" }
             @{ Key = '2'; Label = 'Dev viewer'; Hint = 'your local repository, default profile' }
             @{ Key = '3'; Label = 'Debug viewer'; Hint = 'with console and debugging controls' }
             @{ Key = '4'; Label = 'Demo'; Hint = 'offline, choice of scenario' }
@@ -167,7 +167,7 @@ function Show-Main {
             @{ Key = '8'; Label = 'Shortcuts'; Hint = $(if ($IsLinux) { 'Desktop and applications menu' } else { 'Desktop and Start menu' }) }
             @{ Key = 'c'; Label = 'Claude permissions'; Hint = 'let the agents follow and merge their PRs, handle the issues' }
             @{ Key = 'v'; Label = 'Check again'; Hint = 'the full table of the environment' }
-            @{ Key = 'x'; Label = 'Reset the repository'; Hint = 'fresh clone from GitHub, erases everything local (inventory first)' }
+            @{ Key = 'x'; Label = 'Reset the repository'; Hint = 'disabled to protect independent development branches' }
             @{ Key = '0'; Label = 'Quit'; Hint = '' }
         )
         $pick = Show-Menu 'What do you want to do?' $items { Show-Logo 'Tools'; Show-Status $checks } $selected
@@ -202,7 +202,8 @@ function Show-Main {
 # --- Entry ------------------------------------------------------------------------
 
 $Paths = Find-Project
-if ($Action -eq 'install' -or -not $Paths) { Start-Install; exit }
+if (-not $Paths) { throw 'Run Aurora Tools from the Keshii repository.' }
+if ($Action -eq 'install') { throw 'Use Repair / update for the existing Keshii repository.' }
 $ToolsFingerprint = Get-ToolsFingerprint $Paths.ToolsRepo
 $ToolsRestartPath = $null
 $sessionCursorVisible = $true

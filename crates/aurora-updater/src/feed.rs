@@ -11,7 +11,7 @@ use std::time::Duration;
 
 pub const RELEASES: &str = "https://api.github.com/repos/etherealkeshii/Aurora-Viewer/releases?per_page=100";
 pub const RELEASE_PAGE: &str = "https://github.com/etherealkeshii/Aurora-Viewer/releases";
-const DOWNLOADS: &str = "https://github.com/Aurora-Viewer/Aurora-Viewer/releases/download";
+const DOWNLOADS: &str = "https://github.com/etherealkeshii/Aurora-Viewer/releases/download";
 pub const POLICY: &str = "aurora-update-policy.json";
 pub const MAX_ARCHIVE: u64 = 2 * 1024 * 1024 * 1024;
 /// How long an installation below a new minimum may still sign in, when
@@ -242,7 +242,7 @@ impl Source {
                     r.tag_name.starts_with('v')
                 } else {
                     r.tag_name.ends_with("-Keshii")
-                }) && !r.draft && r.prerelease == !v.pre.is_empty() && (!self.loopback || channel.accepts(&v))).then_some((v, r))
+                }) && !r.draft && v.build.is_empty() && (!self.loopback || (r.prerelease == !v.pre.is_empty() && channel.accepts(&v)))).then_some((v, r))
             })
             .filter(|(v, _)| super::is_newer(&v.to_string(), current))
             .collect();
@@ -343,7 +343,7 @@ impl Source {
             version: if self.loopback {
                 v.to_string()
             } else {
-                r.tag_name.clone()
+                r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name).to_owned()
             },
             tag: r.tag_name,
             notes: r.body.unwrap_or_default(),
@@ -370,7 +370,7 @@ pub fn version(value: &str) -> Option<Version> {
 fn signed_name(tag: &str) -> Option<String> {
     if cfg!(target_os = "macos") {
         Some(if tag.ends_with("-Keshii") {
-            format!("Aurora-Viewer-{tag}-macOS-arm64.dmg")
+            format!("Aurora-Viewer-{}-macOS-arm64.dmg", tag.strip_prefix('v').unwrap_or(tag))
         } else {
             format!("Aurora-Viewer-{tag}-macos-arm64.dmg")
         })
@@ -383,6 +383,11 @@ fn signed_name(tag: &str) -> Option<String> {
 /// the Windows ZIP, or the Linux tar.gz. macOS installs its application by
 /// hand, so a release offers it no package to install.
 fn package_name(tag: &str) -> Option<String> {
+    let tag = if tag.ends_with("-Keshii") {
+        tag.strip_prefix('v').unwrap_or(tag)
+    } else {
+        tag
+    };
     if cfg!(windows) {
         Some(format!("Aurora-Viewer-{tag}-windows-x64.zip"))
     } else if cfg!(target_os = "linux") {

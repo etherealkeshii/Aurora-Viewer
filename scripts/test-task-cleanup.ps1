@@ -81,7 +81,7 @@ try {
     # Older Cargo: deps\ and .fingerprint\; and a release build, without
     # incremental\, dated by the exe Cargo writes into the profile folder.
     $old = Join-Path $fixture 'old-layout'
-    New-FakeTarget $old @{ 'debug\deps' = 5; 'debug\.fingerprint' = 6; 'debug\incremental' = 9; 'release\deps' = 50; 'release\aurora-viewer.exe' = 3 }
+    New-FakeTarget $old @{ 'debug\deps' = 5; 'debug\.fingerprint' = 6; 'debug\incremental' = 9; 'release\deps' = 50; 'release\aurora-viewer-Keshii.exe' = 3 }
     Assert-CleanupTest (Test-Near (Get-AgeHours $old) 3) 'Older layout: deps\, .fingerprint\ and the profile files date the target.'
 
     # Nothing to date it: unknown, never "infinitely" old.

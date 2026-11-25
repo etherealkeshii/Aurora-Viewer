@@ -39,7 +39,7 @@ function Test-InUse([string]$Dir) {
         })
     }
     $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue -Filter (
-        "Name='cargo.exe' OR Name='rustc.exe' OR Name='clippy-driver.exe' OR Name='aurora-viewer.exe'")
+        "Name='cargo.exe' OR Name='rustc.exe' OR Name='clippy-driver.exe' OR Name='aurora-viewer-Keshii.exe'")
     [bool]($procs | Where-Object {
         ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($full, [StringComparison]::OrdinalIgnoreCase)) -or
         ($_.CommandLine -and $_.CommandLine.IndexOf($full, [StringComparison]::OrdinalIgnoreCase) -ge 0)

@@ -351,8 +351,8 @@ pub fn folder_candidates(chosen_cache: &[PathBuf], transcripts: Option<PathBuf>,
         && let Some(base) = directories::BaseDirs::new()
     {
         let data = base.data_dir();
-        out.push((Kind::MenuEntry, data.join("applications").join("aurora-viewer.desktop")));
-        out.push((Kind::MenuEntry, data.join("icons/hicolor/scalable/apps/aurora-viewer.svg")));
+        out.push((Kind::MenuEntry, data.join("applications").join("aurora-viewer-Keshii.desktop")));
+        out.push((Kind::MenuEntry, data.join("icons/hicolor/scalable/apps/aurora-viewer-Keshii.svg")));
     }
     if let Ok(exe) = std::env::current_exe() {
         out.push((Kind::Viewer, viewer_location(&exe)));

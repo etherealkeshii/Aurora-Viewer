@@ -3,7 +3,7 @@
 
 # The viewer's executable in a build folder.
 function Get-ViewerExe([string]$Dir) {
-    Join-Path $Dir $(if ($IsLinux) { 'aurora-viewer' } else { 'aurora-viewer.exe' })
+    Join-Path $Dir $(if (-not $IsWindows) { 'aurora-viewer-Keshii' } else { 'aurora-viewer-Keshii.exe' })
 }
 
 # A script of scripts/, from the checkout these tools run from: a worktree's
@@ -33,7 +33,14 @@ function Start-Viewer([string]$Exe, [string]$Title, [hashtable]$Env = @{}, [swit
     $saved = @{}
     foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); Set-Item "env:$k" $Env[$k] }
     try {
-        if ($IsLinux) {
+        if ($IsMacOS) {
+            if ($Console) {
+                Set-CursorVisible $true
+                & $Exe --title $Title
+                return
+            }
+            Start-Process -FilePath $Exe -ArgumentList '--title', "`"$Title`"" -WorkingDirectory (Split-Path $Exe -Parent) | Out-Null
+        } elseif ($IsLinux) {
             Push-Location (Split-Path $Exe -Parent)
             try {
                 $terminal = if ($Console) { Get-TerminalCommand }
@@ -79,17 +86,25 @@ function Invoke-Cargo([string[]]$Arguments) {
 }
 
 function Invoke-ReleaseViewer {
-    Write-Title 'Release viewer: the latest main from GitHub, with --release'
-    Write-Color "  Built in RELEASE$DirSep; your local changes are not included." muted
+    Write-Title 'Release viewer: the Keshii distribution, with --release'
+    Write-Color '  Builds the tagged distribution checkout without changing branches.' muted
+
     & (Get-ToolScript 'build-release.ps1')
-    if ($LASTEXITCODE -eq 0 -and (Read-YesNo 'Start this viewer?')) {
-        Start-Viewer (Get-ViewerExe (Join-Path $Paths.Release 'Aurora-Viewer')) 'Release'
+
+    if (Read-YesNo 'Start this viewer?') {
+        $dir = Join-Path $Paths.Release 'Aurora-Viewer'
+        $exe = if ($IsMacOS) {
+            Join-Path $dir 'Aurora Viewer-Keshii.app/Contents/MacOS/aurora-viewer-Keshii'
+        } else {
+            Get-ViewerExe $dir
+        }
+        Start-Viewer $exe 'Release'
     }
 }
 
 function Invoke-DevViewer {
     Write-Title 'Dev viewer: your local repository, default profile'
-    if (Invoke-Cargo @('build', '-p', 'aurora-viewer')) {
+    if (Invoke-Cargo @('build', '--locked', '-p', 'aurora-viewer')) {
         if (Read-YesNo 'Start this viewer?') { Start-Viewer (Get-ViewerExe (Join-Path $Paths.Repo 'target\debug')) 'Dev' }
     }
 }
@@ -97,7 +112,7 @@ function Invoke-DevViewer {
 function Invoke-DebugViewer {
     Write-Title 'Debug viewer: console, debugging controls, full information'
     Write-Color "  Profile `"debugging`" (Cargo.toml): its own target$($DirSep)debugging folder, a few more GB." muted
-    if (Invoke-Cargo @('build', '--profile', 'debugging', '-p', 'aurora-viewer')) {
+    if (Invoke-Cargo @('build', '--locked', '--profile', 'debugging', '-p', 'aurora-viewer')) {
         if (Read-YesNo 'Start this viewer (with its console)?') {
             Start-Viewer (Get-ViewerExe (Join-Path $Paths.Repo 'target\debugging')) 'Debug' @{ RUST_BACKTRACE = '1' } -Console
         }
@@ -127,7 +142,7 @@ function Invoke-Demo {
     $pick = Show-Menu 'Offline demo: which scenario?' $items { Show-Logo 'Demo' }
     if (-not $pick) { return $false }
     Write-Title "Demo: $($pick.Label)"
-    if (Invoke-Cargo @('build', '-p', 'aurora-viewer')) {
+    if (Invoke-Cargo @('build', '--locked', '-p', 'aurora-viewer')) {
         $vars = @{ AURORA_DEMO = '1' }
         if ($pick.Var) { $vars[$pick.Var] = '1' }
         Start-Viewer (Get-ViewerExe (Join-Path $Paths.Repo 'target\debug')) "Demo $($pick.Label)" $vars
@@ -205,7 +220,9 @@ function Invoke-Disk {
 }
 
 function Invoke-Logs {
-    $dir = if ($IsLinux) {
+    $dir = if ($IsMacOS) {
+        Join-Path $HOME 'Library/Application Support/org.Aurora.AuroraViewer/logs'
+    } elseif ($IsLinux) {
         # same rule as the viewer (logging.rs, directories' data_local_dir)
         Join-Path $(if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HOME '.local/share' }) 'auroraviewer/logs'
     } else {
@@ -226,7 +243,7 @@ function Invoke-Logs {
         @{ Key = '3'; Label = "Copy the path of $($last.Name)"; Hint = 'to send it to an agent' }
     )
     switch ($pick.Key) {
-        '1' { if ($IsLinux) { Open-External $dir } else { Start-Process explorer.exe $dir } }
+        '1' { if (-not $IsWindows) { Open-External $dir } else { Start-Process explorer.exe $dir } }
         '2' { Write-Host ''; Get-Content -LiteralPath $last.FullName -Tail 40 -Encoding UTF8 | ForEach-Object { Write-Color "  $_" muted }; Wait-Back }
         '3' {
             if (Copy-ToClipboard $last.FullName) { Write-Color "  Copied: $($last.FullName)" success }
@@ -286,6 +303,23 @@ function Invoke-LinuxShortcut {
 
 function Invoke-Shortcut {
     Write-Title 'Shortcuts to the Aurora tools'
+    if ($IsMacOS) {
+        $desktop = Join-Path $HOME 'Desktop'
+        $script = Join-Path $Paths.Repo 'scripts/tools/aurora-tools.ps1'
+        if (-not (Read-YesNo 'Create Aurora Tools and Aurora PR shortcuts on the Desktop?')) { return }
+        foreach ($item in @(
+            @{ Name = 'Aurora Tools-Keshii'; Args = '' },
+            @{ Name = 'Aurora PR-Keshii'; Args = ' -Action prs' }
+        )) {
+            $file = Join-Path $desktop ($item.Name + '.command')
+            $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
+            $text = "#!/bin/sh`nexec `"$pwsh`" -NoProfile -File `"$script`"$($item.Args)`n"
+            [IO.File]::WriteAllText($file, $text, [Text.UTF8Encoding]::new($false))
+            chmod +x $file
+            Write-Color "  Created: $file" success
+        }
+        Wait-Back; return
+    }
     if ($IsLinux) { Invoke-LinuxShortcut; return }
     $target = Join-Path $Paths.Repo 'aurora-tools.cmd'
     $icon = Join-Path $Paths.Repo 'assets\branding\aurora.ico'

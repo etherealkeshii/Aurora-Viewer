@@ -234,21 +234,21 @@ fn the_remaining_places_exist_and_nest_once() {
 fn a_file_opens_the_folder_that_holds_it() {
     let place = Remaining {
         kinds: vec![Kind::Viewer],
-        path: PathBuf::from("viewers/aurora-viewer.exe"),
+        path: PathBuf::from("viewers/aurora-viewer-Keshii.exe"),
     };
     assert_eq!(place.folder(|_| false), PathBuf::from("viewers"));
-    assert_eq!(place.folder(|_| true), PathBuf::from("viewers/aurora-viewer.exe"));
+    assert_eq!(place.folder(|_| true), PathBuf::from("viewers/aurora-viewer-Keshii.exe"));
 }
 
 #[test]
 fn the_viewer_is_its_bundle_on_macos() {
     assert_eq!(
-        viewer_location(Path::new("/Applications/Aurora Viewer.app/Contents/MacOS/aurora-viewer")),
-        PathBuf::from("/Applications/Aurora Viewer.app")
+        viewer_location(Path::new("/Applications/Aurora Viewer-Keshii.app/Contents/MacOS/aurora-viewer-Keshii")),
+        PathBuf::from("/Applications/Aurora Viewer-Keshii.app")
     );
     assert_eq!(
-        viewer_location(Path::new("viewers/aurora-viewer.exe")),
-        PathBuf::from("viewers/aurora-viewer.exe")
+        viewer_location(Path::new("viewers/aurora-viewer-Keshii.exe")),
+        PathBuf::from("viewers/aurora-viewer-Keshii.exe")
     );
 }
 

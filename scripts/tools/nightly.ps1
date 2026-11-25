@@ -117,3 +117,28 @@ function Get-PolicyLine([string[]]$StableTagMessage, [string]$Version, $Defaults
     if ($previous -and $null -ne $previous.grace_hours -and $policy.minimum_supported_version -eq $previous.minimum_supported_version) { $policy.grace_hours = $previous.grace_hours }
     'Aurora-Update-Policy: ' + ([pscustomobject]$policy | ConvertTo-Json -Compress)
 }
+
+
+function Get-NextKeshiiBetaTag([string[]]$Tags, [datetime]$UtcDate) {
+    $stable = Get-LatestStable @(
+        $Tags | Where-Object { $_ -cnotmatch '-Keshii$' }
+    )
+
+    if (-not $stable) {
+        throw 'No upstream stable version tag found.'
+    }
+
+    $core = "$($stable.Major).$($stable.Minor).$($stable.Patch + 1)"
+    $day = $UtcDate.ToString('yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+    $prefix = "v$core-beta.$day."
+    $pattern = '^v?' + [regex]::Escape("$core-beta.$day.") + '([1-9][0-9]*)-Keshii$'
+    $n = 0
+
+    foreach ($tag in $Tags) {
+        if ($tag -cmatch $pattern) {
+            $n = [Math]::Max($n, [int]$Matches[1])
+        }
+    }
+
+    "$prefix$($n + 1)-Keshii"
+}

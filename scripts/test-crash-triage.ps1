@@ -39,7 +39,7 @@ kernelbase id=0123456789ABCDEF0123456789ABCDEF1 code=6712ABCD3f0000
 # 3000: std::panicking frame; PUBLIC 5000: a function without FUNC record.
 $sym = @'
 MODULE windows x86_64 FEDCBA9876543210FEDCBA98765432101 aurora_viewer.pdb
-INFO CODE_ID 6700000Ac5e0000 aurora-viewer.exe
+INFO CODE_ID 6700000Ac5e0000 aurora-viewer-Keshii.exe
 FILE 0 D:\a\Aurora-Viewer\Aurora-Viewer\crates\aurora-render\src\draw.rs
 FILE 1 D:\a\Aurora-Viewer\Aurora-Viewer\crates\aurora-render\src\cull.rs
 FILE 2 /rustc/0123abcd/library\std\src\panicking.rs
@@ -256,7 +256,7 @@ try {
             @('Intel(R) Iris(R) Xe Graphics', 'Intel integrated'),
             @('Intel(R) Arc(TM) A770 Graphics', 'Intel Arc'),
             @('Apple M2 Pro', 'Apple M2'),
-            @('no discrete GPU visible to Vulkan on a hybrid PC the NVIDIA Control Panels Preferred graphics processor for aurora-viewer.exe', 'no discrete GPU visible'),
+            @('no discrete GPU visible to Vulkan on a hybrid PC the NVIDIA Control Panels Preferred graphics processor for aurora-viewer-Keshii.exe', 'no discrete GPU visible'),
             @('', 'unknown GPU'),
             @('Some Card 9000', 'other GPU'))) {
         Assert-Triage ((Get-GpuFamily $case[0]) -eq $case[1]) "GPU $($case[0]) must be $($case[1]), not $(Get-GpuFamily $case[0])."

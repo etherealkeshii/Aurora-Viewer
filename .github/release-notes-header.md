@@ -1,4 +1,12 @@
 > This software is not provided or supported by Linden Lab, the makers of Second Life.
 
-Support: [issues](https://github.com/Aurora-Viewer/Aurora-Viewer/issues) · [Discord](https://discord.gg/TK4nbMGmKt) · [contact@aurora-viewer.org](mailto:contact@aurora-viewer.org) — Privacy: [aurora-viewer.org/privacy](https://aurora-viewer.org/privacy/) — Early development (0.x): see [what works today](https://github.com/Aurora-Viewer/Aurora-Viewer#what-works-today) and the [roadmap](https://github.com/Aurora-Viewer/Aurora-Viewer#roadmap).
+Aurora Viewer-Keshii is an independently maintained distribution of Aurora Viewer, built from the Aurora open-source project with additional Keshii-specific features and release management.
 
+These releases are not official Aurora Viewer releases.
+
+- Distribution support: [GitHub Issues](https://github.com/etherealkeshii/Aurora-Viewer/issues)
+- Downloads: [Keshii Releases](https://github.com/etherealkeshii/Aurora-Viewer/releases)
+- Upstream project: [Aurora Viewer](https://github.com/Aurora-Viewer/Aurora-Viewer)
+- Upstream privacy information: [aurora-viewer.org/privacy](https://aurora-viewer.org/privacy/)
+
+Windows x64, Linux x64 and macOS ARM64 packages are distributed with independently signed update checksums. macOS applications are ad hoc signed and are not Apple-notarized.

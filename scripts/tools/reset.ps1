@@ -104,55 +104,7 @@ function Show-ResetInventory($Inv) {
 
 function Invoke-Reset {
     Write-Title 'Reset the repository'
-    Write-Color "  Puts $($Paths.Repo) back in the state of a fresh clone of main on GitHub," ink
-    Write-Color "  deletes the agent tasks (work$DirSep) and RELEASE$DirSep, then repairs the environment." ink
-    Write-Color '  Inventory (GitHub, branches, tasks)…' muted_dim
-    $inv = Get-ResetInventory
-    $lost = Show-ResetInventory $inv
-    # Test-InUse (scripts/common.ps1): a build or a viewer running in the project
-    . (Get-ToolScript 'common.ps1')
-    if (Test-InUse $Paths.Root) {
-        Write-Color '  A build or a viewer is running in the project: close it, then try again.' danger
-        Wait-Back; return
-    }
-    $typed = Read-Text "$(if ($lost) { 'What is listed above will be lost. ' })To confirm, type $ResetWord (empty: cancel):"
-    if ($typed -cne $ResetWord) { Write-Color '  Cancelled: nothing was touched.' muted; Wait-Back; return }
-    if ($DryRun) {
-        Write-Color "  [dry run] git worktree remove --force (each task, RELEASE$($DirSep)src); folders work$DirSep* and RELEASE$DirSep deleted" teal
-        Write-Color '  [dry run] git checkout -B main origin/main; git reset --hard origin/main; git clean -ffdx; local branches and stashes deleted' teal
-        Write-Color '  [dry run] repair (toolchain, crates, Firestorm)' teal
-        Wait-Back; return
-    }
-
-    $repo = $Paths.Repo
-    Write-Title "Agent tasks and RELEASE$DirSep"
-    foreach ($w in $inv.Worktrees) {
-        git -C $repo worktree remove --force $w.Path 2>$null
-        if (Test-Path -LiteralPath $w.Path) { Remove-Item -LiteralPath $w.Path -Recurse -Force -ErrorAction SilentlyContinue }
-        if (Test-Path -LiteralPath $w.Path) { Write-Color "  $($w.Name): folder locked (a program is using it), delete it later." warn }
-        else { Write-Color "  $($w.Name): deleted." success }
-    }
-    git -C $repo worktree prune
-    foreach ($dir in @(Get-ChildItem -LiteralPath $Paths.Work -Directory -Force -ErrorAction SilentlyContinue) + @(Get-Item -LiteralPath $Paths.Release -ErrorAction SilentlyContinue)) {
-        if ($dir) { Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue }
-    }
-
-    Write-Title 'Repository: fresh clone of main on GitHub'
-    git -C $repo checkout --force --quiet -B main origin/main
-    git -C $repo reset --hard --quiet origin/main
-    git -C $repo clean -ffdxq
-    git -C $repo branch --quiet --set-upstream-to origin/main main 2>$null
-    foreach ($b in git -C $repo for-each-ref --format='%(refname:short)' refs/heads) {
-        if ($b -ne 'main') { git -C $repo branch -D --quiet $b }
-    }
-    git -C $repo stash clear
-    $left = @(git -C $repo status --porcelain --ignored)
-    if ($left) { Write-Color "  $($left.Count) file(s) could not be erased (locked): $($left[0])…" warn }
-    else { Write-Color "  ${repo}: identical to origin/main." success }
-
-    Invoke-Repair $Paths
-    Write-Host ''
-    Write-Aurora '  » Repository reset.'
-    Write-Color "    Close and reopen $LauncherName to use the tools of this main." muted
+    Write-Color '  Repository reset is disabled in the Keshii distribution.' warn
+    Write-Color '  This protects independent branches, release files and local development work.' muted
     Wait-Back
 }

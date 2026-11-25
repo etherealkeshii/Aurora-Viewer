@@ -53,8 +53,8 @@ def package(repo, exe, out, version):
             shutil.copy2(licence, out / "assets/dictionaries" / f"{folder.name}-LICENSE.txt")
     for name in ("LICENSE", "NOTICE.md", "README.md"):
         shutil.copy2(repo / name, out)
-    shutil.copy2(repo / "packaging/linux/aurora-viewer.desktop", out)
-    shutil.copy2(repo / "assets/branding/aurora-logo.svg", out / "aurora-viewer.svg")
+    shutil.copy2(repo / "packaging/linux/aurora-viewer-Keshii.desktop", out)
+    shutil.copy2(repo / "assets/branding/aurora-logo.svg", out / "aurora-viewer-Keshii.svg")
     (out / "aurora-install.json").write_text(
         json.dumps({"schema": 1, "version": version}), encoding="utf-8"
     )
@@ -185,9 +185,9 @@ def main():
     previous = os.environ.pop("AURORA_UPDATE_TEST_VERSION", None)
     try:
         build(FIRST)
-        package(repo, repo / "target/debug/aurora-viewer", install, FIRST)
+        package(repo, repo / "target/debug/aurora-viewer-Keshii", install, FIRST)
         build(next_version)
-        package(repo, repo / "target/debug/aurora-viewer", feed / folder, next_version)
+        package(repo, repo / "target/debug/aurora-viewer-Keshii", feed / folder, next_version)
     finally:
         if previous is not None:
             os.environ["AURORA_UPDATE_TEST_VERSION"] = previous

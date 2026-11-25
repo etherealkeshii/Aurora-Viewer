@@ -6,9 +6,9 @@
     runs it too (PowerShell 7), with the executable without extension.
 
 .EXAMPLE
-    ./scripts/package.ps1 -Exe target/release/aurora-viewer.exe -Out Aurora-Viewer
+    ./scripts/package.ps1 -Exe target/release/aurora-viewer-Keshii.exe -Out Aurora-Viewer
 .EXAMPLE
-    ./scripts/package.ps1 -Exe target/release/aurora-viewer -Out Aurora-Viewer-v0.8.0-linux-x64
+    ./scripts/package.ps1 -Exe target/release/aurora-viewer-Keshii -Out Aurora-Viewer-v0.8.0-linux-x64
 #>
 param(
     [Parameter(Mandatory)][string]$Exe,
@@ -43,11 +43,11 @@ Copy-Item -LiteralPath $docs -Destination $Out -ErrorAction Stop
 # (macOS has its own bundle: package-macos.ps1; $IsMacOS is unset, so
 # false, in Windows PowerShell 5.1.)
 if (-not [IO.Path]::GetExtension($Exe) -and -not $IsMacOS) {
-    Copy-Item -LiteralPath (Join-Path $Source 'packaging/linux/aurora-viewer.desktop') -Destination $Out -ErrorAction Stop
-    Copy-Item -LiteralPath (Join-Path $Source 'assets/branding/aurora-logo.svg') -Destination (Join-Path $Out 'aurora-viewer.svg') -ErrorAction Stop
+    Copy-Item -LiteralPath (Join-Path $Source 'packaging/linux/aurora-viewer-Keshii.desktop') -Destination $Out -ErrorAction Stop
+    Copy-Item -LiteralPath (Join-Path $Source 'assets/branding/aurora-logo.svg') -Destination (Join-Path $Out 'aurora-viewer-Keshii.svg') -ErrorAction Stop
 }
 $taskExePath = (Resolve-Path -LiteralPath $Exe).Path
-$taskVersion = (& $taskExePath --version | Out-String).Trim() -replace '^Aurora Viewer ', ''
+$taskVersion = (& $taskExePath --version | Out-String).Trim() -replace '^Aurora Viewer-Keshii ', ''
 if ($LASTEXITCODE -ne 0 -or $taskVersion -notmatch '^\d+\.\d+\.\d+([+-][0-9A-Za-z.+-]+)?$') { throw 'Invalid package version.' }
 $taskJson = @{ schema = 1; version = $taskVersion } | ConvertTo-Json
 $taskMetadataPath = Join-Path (Resolve-Path -LiteralPath $Out -ErrorAction Stop).Path 'aurora-install.json'

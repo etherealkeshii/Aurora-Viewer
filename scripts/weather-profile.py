@@ -77,7 +77,7 @@ def logs_dir() -> Path:
 
 
 def default_exe() -> Path:
-    name = "aurora-viewer.exe" if platform.system() == "Windows" else "aurora-viewer"
+    name = "aurora-viewer-Keshii.exe" if platform.system() == "Windows" else "aurora-viewer-Keshii"
     return Path("target/release") / name
 
 
