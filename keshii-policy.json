@@ -1,8 +1,10 @@
 {
     "schema": 1,
-    "revision": 1,
+    "revision": 2,
     "latest_version": "0.9.14-beta.20261125.1-Keshii",
     "expiry_enabled": true,
     "grace_hours": 168,
-    "exempt_versions": []
+    "exempt_versions": [
+        "0.9.14-beta.20261124.1-Keshii"
+    ]
 }
