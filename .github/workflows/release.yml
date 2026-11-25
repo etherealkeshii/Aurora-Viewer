@@ -50,7 +50,7 @@ jobs:
           echo "Verified distribution commit: $tagged_commit"
 
   windows:
-    needs: [authorize, macos]
+    needs: authorize
     if: needs.authorize.result == 'success'
     runs-on: windows-latest
     timeout-minutes: 90
@@ -164,7 +164,7 @@ jobs:
           compression-level: 0
           retention-days: 7
   macos:
-    needs: authorize
+    needs: [authorize, linux]
     if: needs.authorize.result == 'success'
     runs-on: macos-15
     timeout-minutes: 90

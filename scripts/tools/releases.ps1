@@ -191,8 +191,61 @@ function New-AuroraRelease($Repo) {
             Where-Object { $_.headBranch -eq $tag } | Select-Object -First 1 -ExpandProperty databaseId
     }
     if ($id) {
-        gh run watch $id -R $Repo.Slug --exit-status
-        if ($LASTEXITCODE -eq 0) {
+        $releaseSucceeded = $false
+        $maxAttempts = 5
+
+        while ($true) {
+            gh run watch $id -R $Repo.Slug --exit-status
+            if ($LASTEXITCODE -eq 0) {
+                $releaseSucceeded = $true
+                break
+            }
+
+            if ($Repo.Slug -cne 'etherealkeshii/Aurora-Viewer') { break }
+
+            $run = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id")
+            if (-not $run -or $run.status -ne 'completed') { break }
+            if ($run.run_attempt -ge $maxAttempts) {
+                Write-Color '  Maximum release attempts reached.' danger
+                break
+            }
+
+            $jobData = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id/attempts/$($run.run_attempt)/jobs?per_page=100")
+            $retryJob = $null
+
+            foreach ($job in $jobData.jobs) {
+                if ($job.name -notin @('windows', 'linux', 'macos')) { continue }
+                if ($job.conclusion -notin @('cancelled', 'failure')) { continue }
+                if (@($job.steps | Where-Object { $_.name -eq 'Build' -and $_.started_at }).Count -gt 0) { continue }
+
+                $annotations = Invoke-GhJson @('api', "repos/$($Repo.Slug)/check-runs/$($job.id)/annotations?per_page=100")
+                if (@($annotations | Where-Object {
+                    $_.message -match 'not acquired by Runner of type hosted'
+                }).Count -gt 0) {
+                    $retryJob = $job
+                    break
+                }
+            }
+
+            if (-not $retryJob) { break }
+
+            Write-Color "  Hosted runner unavailable for $($retryJob.name)." warn
+            Write-Color "  Retrying platform job in 60 seconds (attempt $($run.run_attempt + 1) of $maxAttempts)." teal
+            Start-Sleep -Seconds 60
+
+            $currentRun = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id")
+            if (-not $currentRun -or $currentRun.status -ne 'completed' -or $currentRun.run_attempt -ne $run.run_attempt) { break }
+
+            gh api --method POST "repos/$($Repo.Slug)/actions/jobs/$($retryJob.id)/rerun"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Color '  GitHub refused the job retry.' danger
+                break
+            }
+
+            Start-Sleep -Seconds 10
+        }
+
+        if ($releaseSucceeded) {
             $url = gh release view $tag -R $Repo.Slug --json url --jq .url 2>$null
             Write-Color "  Release published: $url" success
             if ($url -and (Read-YesNo 'Open it in the browser?')) { Open-External $url }
