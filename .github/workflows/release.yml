@@ -10,6 +10,12 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
+
+env:
+  RECOVERY_TAG: v0.9.14-beta.20261126.2-Keshii
+  RECOVERY_RUN: '45709632756'
+  RECOVERY_SHA: fa65660e127b357ac8689bfd6337650f54ca0f20
 
 jobs:
   authorize:
@@ -49,9 +55,50 @@ jobs:
 
           echo "Verified distribution commit: $tagged_commit"
 
+      - name: Verify recovery provenance
+        if: github.ref_name == env.RECOVERY_TAG
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN")
+
+          jq -e --arg sha "$RECOVERY_SHA" --arg tag "$RECOVERY_TAG" --arg repo "$GITHUB_REPOSITORY" '
+            .head_sha == $sha and
+            .head_branch == $tag and
+            .head_repository.full_name == $repo and
+            .repository.full_name == $repo and
+            .actor.login == "etherealkeshii" and
+            .event == "push" and
+            .status == "completed" and
+            .path == ".github/workflows/release.yml"
+          ' <<< "$run"
+
+          git diff --exit-code "$RECOVERY_SHA" HEAD -- . ':(exclude).github/workflows/release.yml'
+
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN/jobs?filter=latest&per_page=100")
+
+          for platform in windows linux; do
+            jq -e --arg platform "$platform" '
+              [.jobs[] | select(.name == $platform and .conclusion == "success")] | length == 1
+            ' <<< "$jobs"
+          done
+
+          artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN/artifacts?per_page=100")
+
+          for artifact in release-windows release-linux; do
+            jq -e --arg artifact "$artifact" '
+              [.artifacts[] | select(.name == $artifact and .expired == false)] | length == 1
+            ' <<< "$artifacts"
+          done
+
+          echo "Recovery provenance verified."
+
   windows:
     needs: authorize
-    if: needs.authorize.result == 'success'
+    if: needs.authorize.result == 'success' && github.ref_name != 'v0.9.14-beta.20261126.2-Keshii'
     runs-on: windows-latest
     timeout-minutes: 90
     permissions:
@@ -148,7 +195,7 @@ jobs:
           retention-days: 7
   linux:
     needs: [authorize, windows]
-    if: needs.authorize.result == 'success'
+    if: needs.authorize.result == 'success' && github.ref_name != 'v0.9.14-beta.20261126.2-Keshii'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -197,7 +244,7 @@ jobs:
           retention-days: 7
   macos:
     needs: [authorize, linux]
-    if: needs.authorize.result == 'success'
+    if: ${{ !cancelled() && needs.authorize.result == 'success' && (needs.linux.result == 'success' || (github.ref_name == 'v0.9.14-beta.20261126.2-Keshii' && needs.linux.result == 'skipped')) }}
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -254,11 +301,12 @@ jobs:
           retention-days: 7
   publish:
     needs: [authorize, windows, linux, macos]
-    if: github.repository == 'etherealkeshii/Aurora-Viewer' && github.event_name == 'push' && github.ref_type == 'tag' && github.actor == 'etherealkeshii' && github.triggering_actor == 'etherealkeshii'
+    if: ${{ !cancelled() && needs.authorize.result == 'success' && needs.macos.result == 'success' && ((needs.windows.result == 'success' && needs.linux.result == 'success') || (github.ref_name == 'v0.9.14-beta.20261126.2-Keshii' && needs.windows.result == 'skipped' && needs.linux.result == 'skipped')) && github.repository == 'etherealkeshii/Aurora-Viewer' && github.event_name == 'push' && github.ref_type == 'tag' && github.actor == 'etherealkeshii' && github.triggering_actor == 'etherealkeshii' }}
     runs-on: ubuntu-latest
     environment: keshii-release
     permissions:
       contents: write
+      actions: read
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -270,14 +318,34 @@ jobs:
       - uses: ./.github/actions/release-admin
 
       - name: Download Windows files
+        if: github.ref_name != env.RECOVERY_TAG
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-windows
 
+      - name: Recover Windows files
+        if: github.ref_name == env.RECOVERY_TAG
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-windows
+          github-token: ${{ github.token }}
+          repository: etherealkeshii/Aurora-Viewer
+          run-id: ${{ env.RECOVERY_RUN }}
+
       - name: Download Linux files
+        if: github.ref_name != env.RECOVERY_TAG
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-linux
+
+      - name: Recover Linux files
+        if: github.ref_name == env.RECOVERY_TAG
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-linux
+          github-token: ${{ github.token }}
+          repository: etherealkeshii/Aurora-Viewer
+          run-id: ${{ env.RECOVERY_RUN }}
 
       - name: Download macOS files
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
