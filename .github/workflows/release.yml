@@ -229,7 +229,7 @@ jobs:
         run: |
           codesign --verify --strict --verbose=2 "$APP"
           test "$(uname -m)" = arm64
-          lipo -verify_arch arm64 "$APP/Contents/MacOS/aurora-viewer-Keshii"
+          lipo "$APP/Contents/MacOS/aurora-viewer-Keshii" -verify_arch arm64
           "$APP/Contents/MacOS/aurora-viewer-Keshii" --version
       - name: Disk image
         run: |
