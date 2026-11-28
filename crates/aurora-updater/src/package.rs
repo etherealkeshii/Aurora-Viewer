@@ -52,6 +52,11 @@ impl Format {
     }
     /// The folder the package's entries sit under.
     fn root(self, tag: &str) -> String {
+        let tag = if tag.ends_with("-Keshii") {
+            tag.strip_prefix('v').unwrap_or(tag)
+        } else {
+            tag
+        };
         match self {
             Self::Zip => format!("Aurora-Viewer-{tag}-windows-x64"),
             Self::TarGz => format!("Aurora-Viewer-{tag}-linux-x64"),
@@ -61,8 +66,8 @@ impl Format {
     /// system's: the tests extract the packages of both on any system.
     fn exe(self) -> &'static str {
         match self {
-            Self::Zip => "aurora-viewer.exe",
-            Self::TarGz => "aurora-viewer",
+            Self::Zip => "aurora-viewer-Keshii.exe",
+            Self::TarGz => "aurora-viewer-Keshii",
         }
     }
 }
@@ -412,8 +417,10 @@ mod tests {
     fn each_format_names_its_own_package_layout() {
         assert_eq!(Format::Zip.root("v1.2.3"), "Aurora-Viewer-v1.2.3-windows-x64");
         assert_eq!(Format::TarGz.root("v1.2.3"), "Aurora-Viewer-v1.2.3-linux-x64");
-        assert_eq!(Format::Zip.exe(), "aurora-viewer.exe");
-        assert_eq!(Format::TarGz.exe(), "aurora-viewer");
+        assert_eq!(Format::Zip.root("v1.2.3-Keshii"), "Aurora-Viewer-1.2.3-Keshii-windows-x64");
+        assert_eq!(Format::TarGz.root("v1.2.3-Keshii"), "Aurora-Viewer-1.2.3-Keshii-linux-x64");
+        assert_eq!(Format::Zip.exe(), "aurora-viewer-Keshii.exe");
+        assert_eq!(Format::TarGz.exe(), "aurora-viewer-Keshii");
         assert_eq!(Format::Zip.file(), "download.zip");
         assert_eq!(Format::TarGz.file(), "download.tar.gz");
     }

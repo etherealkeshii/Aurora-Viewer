@@ -16,7 +16,11 @@ use std::{
 };
 
 /// The viewer's executable, as the package names it.
-pub(crate) const EXE: &str = if cfg!(windows) { "aurora-viewer.exe" } else { "aurora-viewer" };
+pub(crate) const EXE: &str = if cfg!(windows) {
+    "aurora-viewer-Keshii.exe"
+} else {
+    "aurora-viewer-Keshii"
+};
 /// The helper is a copy of the viewer, run from the transaction folder
 /// ([`Workspace::handoff`]).
 const HELPER: &str = if cfg!(windows) { "helper.exe" } else { "helper" };
@@ -102,9 +106,9 @@ const PACKAGE: &[&str] = &[
     // the Linux package's desktop entry and icon (`package.ps1`), named after
     // the viewer's app_id (cli.rs DESKTOP_ID)
     #[cfg(target_os = "linux")]
-    "aurora-viewer.desktop",
+    "aurora-viewer-Keshii.desktop",
     #[cfg(target_os = "linux")]
-    "aurora-viewer.svg",
+    "aurora-viewer-Keshii.svg",
 ];
 const MANIFEST: &str = "aurora-install.json";
 

@@ -11,7 +11,7 @@
 //! (indra/newview/linux_tools/) writes a hidden desktop entry for the scheme
 //! into the user's applications folder and makes it the default with
 //! `xdg-mime default`. Aurora writes the same two files itself, per the XDG
-//! specifications: `$XDG_DATA_HOME/applications/aurora-viewer-slurl.desktop`
+//! specifications: `$XDG_DATA_HOME/applications/aurora-viewer-Keshii-slurl.desktop`
 //! and its `x-scheme-handler/<scheme>` defaults in
 //! `$XDG_CONFIG_HOME/mimeapps.list`, the rest of which it leaves untouched.
 
@@ -165,7 +165,7 @@ mod win {
         write(&class, None, "URL:Virtual World")?;
         write(&class, Some("URL Protocol"), "")?;
         write(&format!(r"{class}\DefaultIcon"), None, &format!("\"{exe}\",0"))?;
-        write(&format!(r"{class}\shell\open"), Some("FriendlyAppName"), "Aurora Viewer")?;
+        write(&format!(r"{class}\shell\open"), Some("FriendlyAppName"), "Aurora Viewer-Keshii")?;
         write(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" -url \"%1\""))?;
         log::info!("{scheme} links: registered for this user");
         Ok(())
@@ -223,7 +223,7 @@ mod win {
             let Some(exe) = read(HKEY_CURRENT_USER, &format!(r"{class}\shell\open\command"), None).and_then(|c| command_exe(&c)) else {
                 continue;
             };
-            let aurora = exe.file_name().is_some_and(|n| n.eq_ignore_ascii_case("aurora-viewer.exe"));
+            let aurora = exe.file_name().is_some_and(|n| n.eq_ignore_ascii_case("aurora-viewer-Keshii.exe"));
             if aurora && !exe.exists() {
                 log::info!("{scheme} links: the registered viewer moved");
                 if let Err(e) = register_scheme(scheme) {
@@ -243,8 +243,8 @@ mod xdg {
     use std::path::{Path, PathBuf};
 
     /// Aurora's own entry, hidden from the menus (the shipped
-    /// `aurora-viewer.desktop` claims no scheme: registering stays a choice).
-    const DESKTOP_ID: &str = "aurora-viewer-slurl.desktop";
+    /// `aurora-viewer-Keshii.desktop` claims no scheme: registering stays a choice).
+    const DESKTOP_ID: &str = "aurora-viewer-Keshii-slurl.desktop";
     const DEFAULTS: &str = "Default Applications";
 
     fn home_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -417,8 +417,8 @@ mod xdg {
     pub(super) fn desktop_entry(exe: &str) -> String {
         let mimes: String = SCHEMES.iter().map(|s| format!("x-scheme-handler/{s};")).collect();
         format!(
-            "[Desktop Entry]\nType=Application\nName=Aurora Viewer\nComment=Opens Second Life and Hypergrid links\n\
-             Exec={}\nIcon=aurora-viewer\nTerminal=false\nNoDisplay=true\nMimeType={mimes}\n",
+            "[Desktop Entry]\nType=Application\nName=Aurora Viewer-Keshii\nComment=Opens Second Life and Hypergrid links\n\
+             Exec={}\nIcon=aurora-viewer-Keshii\nTerminal=false\nNoDisplay=true\nMimeType={mimes}\n",
             exec_line(exe)
         )
     }
@@ -729,8 +729,8 @@ mod tests {
     #[test]
     fn command_program() {
         assert_eq!(
-            super::win::command_exe(r#""C:\Viewers\Aurora\aurora-viewer.exe" -url "%1""#),
-            Some(std::path::PathBuf::from(r"C:\Viewers\Aurora\aurora-viewer.exe"))
+            super::win::command_exe(r#""C:\Viewers\Aurora\aurora-viewer-Keshii.exe" -url "%1""#),
+            Some(std::path::PathBuf::from(r"C:\Viewers\Aurora\aurora-viewer-Keshii.exe"))
         );
         assert_eq!(
             super::win::command_exe(r#"C:\Viewer\viewer.exe -url "%1""#),
@@ -749,7 +749,7 @@ mod xdg_tests {
     fn a_replaced_executable_is_registered_at_its_path() {
         let dir = std::env::temp_dir().join(format!("aurora-live-exe-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
-        let exe = dir.join("aurora-viewer");
+        let exe = dir.join("aurora-viewer-Keshii");
         std::fs::write(&exe, "").expect("temp file");
         let deleted = PathBuf::from(format!("{} (deleted)", exe.display()));
         assert_eq!(live_exe(deleted), exe);
@@ -765,8 +765,8 @@ mod xdg_tests {
     #[test]
     fn mimeapps_defaults_are_edited_in_place() {
         let key = "x-scheme-handler/secondlife";
-        let set = with_value(LIST, "Default Applications", key, Some("aurora-viewer-slurl.desktop"));
-        assert_eq!(value(&set, "Default Applications", key), Some("aurora-viewer-slurl.desktop"));
+        let set = with_value(LIST, "Default Applications", key, Some("aurora-viewer-Keshii-slurl.desktop"));
+        assert_eq!(value(&set, "Default Applications", key), Some("aurora-viewer-Keshii-slurl.desktop"));
         // the other sections, keys and the comment stay
         assert_eq!(value(&set, "Added Associations", "text/html"), Some("firefox.desktop;"));
         assert_eq!(value(&set, "Default Applications", "text/plain"), Some("kate.desktop"));
@@ -789,27 +789,27 @@ mod xdg_tests {
         let on = ours_first(earlier);
         assert_eq!(
             on,
-            format!("aurora-viewer-slurl.desktop;{}", earlier.expect("the fixture's default"))
+            format!("aurora-viewer-Keshii-slurl.desktop;{}", earlier.expect("the fixture's default"))
         );
         assert_eq!(without_ours(Some(&on)).as_deref(), earlier);
         // registered twice, or already in the list: listed once, first
         assert_eq!(ours_first(Some(&on)), on);
         assert_eq!(
-            ours_first(Some("a.desktop; aurora-viewer-slurl.desktop;b.desktop")),
-            "aurora-viewer-slurl.desktop;a.desktop;b.desktop;"
+            ours_first(Some("a.desktop; aurora-viewer-Keshii-slurl.desktop;b.desktop")),
+            "aurora-viewer-Keshii-slurl.desktop;a.desktop;b.desktop;"
         );
         // no earlier handler: Aurora alone, and nothing left once off
-        assert_eq!(ours_first(None), "aurora-viewer-slurl.desktop;");
-        assert_eq!(without_ours(Some("aurora-viewer-slurl.desktop;")), None);
+        assert_eq!(ours_first(None), "aurora-viewer-Keshii-slurl.desktop;");
+        assert_eq!(without_ours(Some("aurora-viewer-Keshii-slurl.desktop;")), None);
         assert_eq!(without_ours(None), None);
     }
 
     #[test]
     fn exec_lines_round_trip() {
         for exe in [
-            "/usr/bin/aurora-viewer",
-            "/home/me/My Viewers/aurora-viewer",
-            "/opt/100%/aurora-viewer",
+            "/usr/bin/aurora-viewer-Keshii",
+            "/home/me/My Viewers/aurora-viewer-Keshii",
+            "/opt/100%/aurora-viewer-Keshii",
             r#"/odd/"q"$x`b\\%/aurora"#,
         ] {
             let line = exec_line(exe);
@@ -822,17 +822,20 @@ mod xdg_tests {
 
     #[test]
     fn desktop_entry_claims_the_three_schemes() {
-        let entry = desktop_entry("/usr/bin/aurora-viewer");
+        let entry = desktop_entry("/usr/bin/aurora-viewer-Keshii");
         assert_eq!(value(&entry, "Desktop Entry", "NoDisplay"), Some("true"));
         assert_eq!(
             value(&entry, "Desktop Entry", "MimeType"),
             Some("x-scheme-handler/secondlife;x-scheme-handler/hop;x-scheme-handler/x-grid-location-info;")
         );
         // bare, or xdg-utils skips the entry
-        assert_eq!(value(&entry, "Desktop Entry", "Exec"), Some("/usr/bin/aurora-viewer -url %u"));
         assert_eq!(
-            value(&desktop_entry("/opt/My Viewers/aurora-viewer"), "Desktop Entry", "Exec"),
-            Some(r#""/opt/My Viewers/aurora-viewer" -url %u"#)
+            value(&entry, "Desktop Entry", "Exec"),
+            Some("/usr/bin/aurora-viewer-Keshii -url %u")
+        );
+        assert_eq!(
+            value(&desktop_entry("/opt/My Viewers/aurora-viewer-Keshii"), "Desktop Entry", "Exec"),
+            Some(r#""/opt/My Viewers/aurora-viewer-Keshii" -url %u"#)
         );
     }
 }

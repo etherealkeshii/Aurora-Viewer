@@ -3485,7 +3485,7 @@ ui-options-flash-conversations-nearby-hint = 会話ウィンドウを閉じて�
 ui-options-announce-incoming-im = 相手が入力を始めたらIMの着信を知らせる
 ui-options-announce-incoming-im-hint = 住人があなたへのIMを入力し始めると、メッセージが届く前にその会話が開き、「着信メッセージ：」と名前が表示されます。
 ui-options-unread-ims-in-window-title = ウィンドウのタイトルに未読IMの数を表示する
-ui-options-unread-ims-in-window-title-hint = 未読のIM、グループチャット、会議があるあいだ、その数がウィンドウのタイトルの先頭に「(3) Aurora Viewer」のように表示されます。タスクバーにも表示されます。
+ui-options-unread-ims-in-window-title-hint = 未読のIM、グループチャット、会議があるあいだ、その数がウィンドウのタイトルの先頭に「(3) Aurora Viewer-Keshii」のように表示されます。タスクバーにも表示されます。
 ui-options-im-tab-order = 会話タブを種類ごとに並べる
 ui-options-im-tab-order-hint = 新しい会話タブを末尾ではなく、下で選んだ順序で同じ種類の最後のタブの後ろに置きます。手で動かしたタブはその位置のままです。
 ui-options-im-tab-order-kinds = 順序
@@ -7494,7 +7494,7 @@ ui-options-graphics-card-automatic = 自動
 ui-options-graphics-card-help = 自動では専用カードが優先されます。次回の起動時に適用されます。
 ui-options-graphics-card-in-use = 使用中：{ $name }
 ui-options-graphics-card-choice = 使用するカード
-ui-options-graphics-card-no-discrete = ビューアから見えるのは内蔵グラフィックスのみです。NVIDIAのカードを搭載したＰＣでは、NVIDIAコントロールパネルで aurora-viewer.exe の「優先するグラフィックスプロセッサ」をNVＩＤIAのカードに設定し、それでも表示されない場合はＰＣを再起動してください。
+ui-options-graphics-card-no-discrete = ビューアから見えるのは内蔵グラフィックスのみです。NVIDIAのカードを搭載したＰＣでは、NVIDIAコントロールパネルで aurora-viewer-Keshii.exe の「優先するグラフィックスプロセッサ」をNVＩＤIAのカードに設定し、それでも表示されない場合はＰＣを再起動してください。
 ui-options-graphics-card-cannot-present = 専用カードではビューアのウィンドウを描画できません：モニターをマザーボードではなく専用カードの出力端子に接続してください。
 ui-options-overlays = オーバーレイ
 ui-options-allow-overlays = 他のプログラムのオーバーレイを許可
@@ -9749,7 +9749,7 @@ hud-move-locked = クイック移動をロック
 hud-local-scale-reset = １００％にリセット
 hud-local-scale-forget = 保存したサイズを消去
 hud-local-scale-help = ＨＵＤでキーを押したまま、左ドラッグで移動、ホイールでサイズ変更、Shiftでより細かく調整します。サイズは名前と制作者ごとに、このアカウント用としてこのＰＣに保存されます。ＨＵＤの編集中は、このキーを押さずにホイールを回すとすべてのＨＵＤの表示がズームします。
-cli-help = { "Auroraビューア\u000A\u000A使い方：aurora-viewer [--title <text>] [--fps-limit <fps>] [--vr] [--language <code>] [--grid <name>]\u000A                     [--login <first> <last> <password>] [--version] [--uninstall] [<slurl>]\u000A\u000A  --title <text>   このウィンドウ（\"Auroraビューア <version> - <text>\"）とログファイル\u000A                   （aurora-<text>.log、デモモードでは aurora-demo-<text>.log）に名前を付ける\u000A  --fps-limit <fps>  初期設定を保存せずに、このプロセスを1～500 ＦＰＳに制限する\u000A  --language <code>  このプロセスのＵＩ言語を上書きする（" }{ $languages }{ "）\u000A  --grid <name>    agni、aditi、保存されたグリッド名、またはログインＵＲＩで起動する（--loginuri <uri> も可）\u000A  --login <first> <last> <password>  このアカウントですぐにログインする\u000A  <slurl>, --url <slurl>  この場所から開始する。以降の引数は読み込まれない。すでに\u000A                   起動しているビューアがあれば、そちらが受け取る\u000A  --vr             ワールドが表示されたらVRに入ります（ヘッドセット接続時）\u000A  -V, --version   起動せずにコンパイルされたビューアのバージョンを表示する\u000A  --uninstall      Auroraがフォルダの外に登録したもの（リンクハンドラ、資格情報ストア、\u000A                   Blenderアドオン）を削除し、その内容と残りのフォルダを表示して終了する\u000A  -h, --help       このヘルプを表示する\u000A\u000Aテスト用のスイッチは環境変数です（AURORA_DEMO=1、AURORA_CAPTURE=...）：\u000AREADME.md を参照してください。" }
+cli-help = { "Auroraビューア\u000A\u000A使い方：aurora-viewer-Keshii [--title <text>] [--fps-limit <fps>] [--vr] [--language <code>] [--grid <name>]\u000A                     [--login <first> <last> <password>] [--version] [--uninstall] [<slurl>]\u000A\u000A  --title <text>   このウィンドウ（\"Auroraビューア <version> - <text>\"）とログファイル\u000A                   （aurora-<text>.log、デモモードでは aurora-demo-<text>.log）に名前を付ける\u000A  --fps-limit <fps>  初期設定を保存せずに、このプロセスを1～500 ＦＰＳに制限する\u000A  --language <code>  このプロセスのＵＩ言語を上書きする（" }{ $languages }{ "）\u000A  --grid <name>    agni、aditi、保存されたグリッド名、またはログインＵＲＩで起動する（--loginuri <uri> も可）\u000A  --login <first> <last> <password>  このアカウントですぐにログインする\u000A  <slurl>, --url <slurl>  この場所から開始する。以降の引数は読み込まれない。すでに\u000A                   起動しているビューアがあれば、そちらが受け取る\u000A  --vr             ワールドが表示されたらVRに入ります（ヘッドセット接続時）\u000A  -V, --version   起動せずにコンパイルされたビューアのバージョンを表示する\u000A  --uninstall      Auroraがフォルダの外に登録したもの（リンクハンドラ、資格情報ストア、\u000A                   Blenderアドオン）を削除し、その内容と残りのフォルダを表示して終了する\u000A  -h, --help       このヘルプを表示する\u000A\u000Aテスト用のスイッチは環境変数です（AURORA_DEMO=1、AURORA_CAPTURE=...）：\u000AREADME.md を参照してください。" }
 demo-media-page = { "data:text/html;charset=utf-8,<html><body style='margin:0;height:100vh;background:linear-gradient(135deg,%232a1f4a,%230f6d6d);color:white;font:56px sans-serif;text-align:center'><h1 style='margin:40px 0 10px'>Auroraメディア</h1><p id='t' style='font-size:90px;margin:10px'>--</p><button onclick=\"document.body.style.background='%237a3b9c';this.textContent='クリックされました！'\" style='font-size:48px;padding:10px 40px'>クリック</button><br><input placeholder='ここに記入' style='font-size:44px;margin-top:30px;width:70%'><script>setInterval(function(){document.getElementById('t').textContent=new Date().toLocaleTimeString()},250)</script></body></html>" }
 demo-nearby-media-page-cinema = { "data:text/html;charset=utf-8,<html><head><title>広場の映画館</title></head><body style='margin:0;height:100vh;background:%23402060;color:white;font:64px sans-serif;text-align:center'><h1 style='margin-top:180px'>映画館</h1></body></html>" }
 demo-nearby-media-page-next-door = { "data:text/html;charset=utf-8,<html><head><title>隣の区画</title></head><body style='margin:0;height:100vh;background:%23205040;color:white;font:64px sans-serif;text-align:center'><h1 style='margin-top:180px'>隣の区画</h1></body></html>" }
@@ -10399,7 +10399,7 @@ update-error-package = パッケージが不完全または無効です。現在
 update-error-unsupported = このリリースはこのフォルダから自動的にインストールできません。リリースページからダウンロードし、専用のフォルダに展開してください。
 update-error-protected = ここではAuroraを置き換えられません。このフォルダはサンドボックス化されたパッケージ（Flatpak、Snap、AppImage）に属しているか、あなたのアカウントでは書き込めません。インストールした方法で更新するか、リリースページから新しいバージョンをダウンロードしてください。
 update-error-drive-root = E:\Aurora Viewer のようにドライブ直下にあるフォルダーでは、Auroraは自動更新できません。E:\Games\Aurora Viewer など一つ下の階層にフォルダーを移動し、そこからAuroraを起動してから更新してください。
-update-error-unsupported-macos = macOSでは、新しいバージョンは手動でインストールします。リリースページからダウンロードし、アプリケーションフォルダのAurora Viewerを新しいものに置き換えてください。
+update-error-unsupported-macos = macOSでは、新しいバージョンは手動でインストールします。リリースページからダウンロードし、アプリケーションフォルダのAurora Viewer-Keshiiを新しいものに置き換えてください。
 update-error-startup = アップデートのヘルパーを起動できませんでした。現在のインストールは保持されています。
 update-rollback = 新しいバージョンが正しく起動しませんでした。以前のインストールを復元しました。
 update-rollback-install = 新しいバージョンをインストールできませんでした。以前のインストールはそのままです。

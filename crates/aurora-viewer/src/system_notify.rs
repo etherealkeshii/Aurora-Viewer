@@ -250,10 +250,10 @@ mod freedesktop {
     const DEST: &str = "org.freedesktop.Notifications";
     const PATH: &str = "/org/freedesktop/Notifications";
     /// The application name the server groups the notices by.
-    const APP_NAME: &str = "Aurora Viewer";
-    /// The desktop entry's id (`aurora-viewer.desktop`), from which a server
+    const APP_NAME: &str = "Aurora Viewer-Keshii";
+    /// The desktop entry's id (`aurora-viewer-Keshii.desktop`), from which a server
     /// takes the name and icon it shows and its per-application rules.
-    const DESKTOP_ENTRY: &str = "aurora-viewer";
+    const DESKTOP_ENTRY: &str = "aurora-viewer-Keshii";
     /// Notices whose click is still awaited: the server's id, then ours. A
     /// server tells when one closes; the bound covers one that does not.
     const KEEP: usize = 32;
@@ -462,7 +462,7 @@ mod win {
     fn register() {
         let key = format!("Software\\Classes\\AppUserModelId\\{AUMID}");
         let icon = icon_file();
-        let mut values = vec![("DisplayName", "Aurora Viewer".to_owned())];
+        let mut values = vec![("DisplayName", "Aurora Viewer-Keshii".to_owned())];
         if let Some(icon) = icon {
             values.push(("IconUri", icon.display().to_string()));
         }

@@ -154,7 +154,7 @@ fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
 }
 fn valid_zip() -> Vec<u8> {
     zip(&[
-        ("Aurora-Viewer-v0.3.0-windows-x64/aurora-viewer.exe", b"new viewer"),
+        ("Aurora-Viewer-v0.3.0-windows-x64/aurora-viewer-Keshii.exe", b"new viewer"),
         ("Aurora-Viewer-v0.3.0-windows-x64/assets/character/avatar.llm", b"avatar"),
         ("Aurora-Viewer-v0.3.0-windows-x64/LICENSE", b"license"),
         (
@@ -238,7 +238,7 @@ fn tar_gz(members: &[Member]) -> Vec<u8> {
 fn valid_tar_gz() -> Vec<u8> {
     tar_gz(&[
         Member::dir("Aurora-Viewer-v0.3.0-linux-x64/"),
-        Member::file("Aurora-Viewer-v0.3.0-linux-x64/aurora-viewer", b"new viewer", 0o755),
+        Member::file("Aurora-Viewer-v0.3.0-linux-x64/aurora-viewer-Keshii", b"new viewer", 0o755),
         Member::dir("Aurora-Viewer-v0.3.0-linux-x64/assets/"),
         Member::file("Aurora-Viewer-v0.3.0-linux-x64/assets/character/avatar.llm", b"avatar", 0o644),
         Member::file("Aurora-Viewer-v0.3.0-linux-x64/LICENSE", b"license", 0o644),
@@ -292,7 +292,7 @@ fn verifies_and_extracts_real_download() {
         |_| {},
     ))
     .expect("verified download");
-    assert_eq!(fs::read(root.join("aurora-viewer.exe")).expect("viewer"), b"new viewer");
+    assert_eq!(fs::read(root.join("aurora-viewer-Keshii.exe")).expect("viewer"), b"new viewer");
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn verifies_and_extracts_a_linux_tarball() {
         |_| {},
     ))
     .expect("verified download");
-    assert_eq!(fs::read(root.join("aurora-viewer")).expect("viewer"), b"new viewer");
+    assert_eq!(fs::read(root.join("aurora-viewer-Keshii")).expect("viewer"), b"new viewer");
     assert_eq!(fs::read(root.join("assets/character/avatar.llm")).expect("asset"), b"avatar");
 }
 
@@ -411,8 +411,8 @@ fn a_linux_tarball_keeps_its_executable_bit_and_never_setuid() {
     fs::write(&archive, valid_tar_gz()).expect("tar.gz file");
     let root = package::extract(&archive, &temp.0.join("prepared"), "v0.3.0", &Cancel::default()).expect("extracted");
     let mode = |path: &str| fs::metadata(root.join(path)).expect("file").permissions().mode() & 0o7777;
-    assert_eq!(fs::read(root.join("aurora-viewer")).expect("viewer"), b"new viewer");
-    assert_eq!(mode("aurora-viewer"), 0o755);
+    assert_eq!(fs::read(root.join("aurora-viewer-Keshii")).expect("viewer"), b"new viewer");
+    assert_eq!(mode("aurora-viewer-Keshii"), 0o755);
     assert_eq!(mode("LICENSE"), 0o644);
 }
 
@@ -528,7 +528,11 @@ fn a_folder_without_the_viewer_or_an_update_with_foreign_files_is_refused() {
 
 /// The viewer's executable, as this system's package names it.
 fn exe() -> &'static str {
-    if cfg!(windows) { "aurora-viewer.exe" } else { "aurora-viewer" }
+    if cfg!(windows) {
+        "aurora-viewer-Keshii.exe"
+    } else {
+        "aurora-viewer-Keshii"
+    }
 }
 
 #[test]
