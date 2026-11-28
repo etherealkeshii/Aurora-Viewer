@@ -285,7 +285,7 @@ jobs:
           set -euo pipefail
 
           annotation="$(git tag -l "$TAG" --format='%(contents)')"
-          encoded="$(printf '%s\\n' "$annotation" | sed -n 's/^Keshii-Release-Notes: //p')"
+          encoded="$(printf '%s\n' "$annotation" | sed -n 's/^Keshii-Release-Notes: //p')"
 
           notes="$RUNNER_TEMP/keshii-release-notes.md"
 
