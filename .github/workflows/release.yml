@@ -1,4 +1,5 @@
 name: Release
+run-name: Compile and publish Aurora Viewer ${{ github.ref_name }}
 
 on:
   push:

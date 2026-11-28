@@ -291,67 +291,69 @@ function New-AuroraRelease($Repo) {
             Where-Object { $_.headBranch -eq $tag } | Select-Object -First 1 -ExpandProperty databaseId
     }
     if ($id) {
-        $releaseSucceeded = $false
-        $maxAttempts = 5
+        $conclusion = $null
+        $apiFailures = 0
+        $lastStatus = $null
+        $runUrl = "https://github.com/$($Repo.Slug)/actions/runs/$id"
+
+        Write-Color "  Monitor: $runUrl" teal
 
         while ($true) {
-            gh run watch $id -R $Repo.Slug --exit-status
-            if ($LASTEXITCODE -eq 0) {
-                $releaseSucceeded = $true
-                break
-            }
+            $raw = gh run view $id -R $Repo.Slug --json status,conclusion 2>$null
+            $queryExit = $LASTEXITCODE
+            $run = $null
 
-            if ($Repo.Slug -cne 'etherealkeshii/Aurora-Viewer') { break }
-
-            $run = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id")
-            if (-not $run -or $run.status -ne 'completed') { break }
-            if ($run.run_attempt -ge $maxAttempts) {
-                Write-Color '  Maximum release attempts reached.' danger
-                break
-            }
-
-            $jobData = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id/attempts/$($run.run_attempt)/jobs?per_page=100")
-            $retryJob = $null
-
-            foreach ($job in $jobData.jobs) {
-                if ($job.name -notin @('windows', 'linux', 'macos')) { continue }
-                if ($job.conclusion -notin @('cancelled', 'failure')) { continue }
-                if (@($job.steps | Where-Object { $_.name -eq 'Build' -and $_.started_at }).Count -gt 0) { continue }
-
-                $annotations = Invoke-GhJson @('api', "repos/$($Repo.Slug)/check-runs/$($job.id)/annotations?per_page=100")
-                if (@($annotations | Where-Object {
-                    $_.message -match 'not acquired by Runner of type hosted'
-                }).Count -gt 0) {
-                    $retryJob = $job
-                    break
+            if ($queryExit -eq 0) {
+                try {
+                    $run = $raw | ConvertFrom-Json -ErrorAction Stop
+                } catch {
+                    $run = $null
                 }
             }
 
-            if (-not $retryJob) { break }
+            if (-not $run -or -not $run.status) {
+                $apiFailures++
 
-            Write-Color "  Hosted runner unavailable for $($retryJob.name)." warn
-            Write-Color "  Retrying platform job in 60 seconds (attempt $($run.run_attempt + 1) of $maxAttempts)." teal
-            Start-Sleep -Seconds 60
+                if ($apiFailures -ge 5) {
+                    Write-Color '  GitHub monitoring unavailable. Release outcome is unknown.' warn
+                    break
+                }
 
-            $currentRun = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id")
-            if (-not $currentRun -or $currentRun.status -ne 'completed' -or $currentRun.run_attempt -ne $run.run_attempt) { break }
+                Write-Color '  Temporary GitHub API error. Retrying in 15 seconds.' warn
+                Start-Sleep -Seconds 15
+                continue
+            }
 
-            gh api --method POST "repos/$($Repo.Slug)/actions/jobs/$($retryJob.id)/rerun"
-            if ($LASTEXITCODE -ne 0) {
-                Write-Color '  GitHub refused the job retry.' danger
+            $apiFailures = 0
+
+            if ($run.status -ne $lastStatus) {
+                Write-Color "  Workflow status: $($run.status)" teal
+                $lastStatus = $run.status
+            }
+
+            if ($run.status -eq 'completed' -and $run.conclusion) {
+                $conclusion = $run.conclusion
                 break
             }
 
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds 15
         }
 
-        if ($releaseSucceeded) {
+        if ($conclusion -eq 'success') {
             $url = gh release view $tag -R $Repo.Slug --json url --jq .url 2>$null
-            Write-Color "  Release published: $url" success
-            if ($url -and (Read-YesNo 'Open it in the browser?')) { Open-External $url }
+
+            if ($LASTEXITCODE -eq 0 -and $url) {
+                Write-Color "  Release published: $url" success
+                if (Read-YesNo 'Open it in the browser?') { Open-External $url }
+            } else {
+                Write-Color '  Workflow succeeded, but publication could not be independently confirmed.' warn
+            }
+        } elseif ($conclusion) {
+            Write-Color "  Release workflow completed: $conclusion" danger
+            Write-Color "  Inspect: $runUrl" warn
         } else {
-            Write-Color "  Release workflow failed. Inspect the failed jobs: gh run view $id -R $($Repo.Slug) --log-failed" danger
-            Write-Color '  No partial platform release should be published.' warn
+            Write-Color '  Monitoring stopped. The workflow may still be running.' warn
+            Write-Color "  Continue monitoring: $runUrl" teal
         }
     } else {
         Write-Color '  Release workflow not found yet: follow it on GitHub (Actions tab).' warn
