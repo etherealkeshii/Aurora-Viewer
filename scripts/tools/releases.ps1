@@ -15,8 +15,11 @@ function Invoke-GhJson([string[]]$Arguments) {
 }
 
 function Test-ReleaseRights($Repo) {
+    if ($Repo.Slug -cne 'etherealkeshii/Aurora-Viewer') { return $false }
+    $actor = gh api user --jq .login 2>$null
+    if ($LASTEXITCODE -ne 0 -or $actor -cne 'etherealkeshii') { return $false }
     $perm = gh api "repos/$($Repo.Slug)" --jq '.permissions' 2>$null | ConvertFrom-Json
-    [bool]($perm -and $perm.push)
+    [bool]($perm -and $perm.admin)
 }
 
 function Get-ReleaseList($Repo) {
@@ -32,9 +35,10 @@ function ConvertTo-Version([string]$Tag) {
 
 # The last stable version (no suffix), its date, and the PRs merged since.
 function Get-ReleaseContext($Repo) {
-    git -C $Paths.Repo fetch origin --tags --quiet 2>$null
-    $last = git -C $Paths.Repo tag --list 'v*' | ForEach-Object { $v = ConvertTo-Version $_; if ($v -and -not $v.Suffix) { [pscustomobject]@{ Tag = $_; V = $v } } } |
-        Sort-Object { $_.V.Major }, { $_.V.Minor }, { $_.V.Patch } | Select-Object -Last 1
+    git -C $Paths.Repo fetch fork --tags --quiet 2>$null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the distribution repository.' }
+    $last = git -C $Paths.Repo tag --list 'v*' | ForEach-Object { $v = ConvertTo-Version $_; if ($v -and $_ -cmatch '-Keshii$') { [pscustomobject]@{ Tag = $_; V = $v } } } |
+        Sort-Object { $_.V.Major }, { $_.V.Minor }, { $_.V.Patch }, { $_.Tag } | Select-Object -Last 1
     $since = if ($last) { (git -C $Paths.Repo log -1 --format=%cI $last.Tag).Trim() }
     $filter = if ($since) { @('--search', "merged:>$since") } else { @() }
     $prs = @(Invoke-GhJson (@('pr', 'list', '-R', $Repo.Slug, '--state', 'merged', '--limit', '200', '--json', 'number,title,labels') + $filter))
@@ -48,24 +52,26 @@ function Get-PrType($Pr) {
 }
 
 function Show-ReleaseList($Releases) {
-    Write-Rule 90
-    Write-Color ('  ' + 'Tag'.PadRight(18) + 'Name'.PadRight(40) + 'Published'.PadRight(14) + 'Type') muted
-    Write-Rule 90
+    $tagWidth = [Math]::Max(32, ($Releases | ForEach-Object { $_.tagName.Length + 3 } | Measure-Object -Maximum).Maximum)
+    $versionPattern = '^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-Keshii$'
+    Write-Rule ($tagWidth + 76)
+    Write-Color ('  ' + 'Tag'.PadRight($tagWidth) + 'Name'.PadRight(40) + 'Published'.PadRight(14) + 'Type') muted
+    Write-Rule ($tagWidth + 76)
     if (-not $Releases) { Write-Color '  No release.' muted }
     foreach ($r in $Releases) {
-        $kind = if ($r.tagName -notmatch '^v\d') { 'assets (protected)' } elseif ($r.isDraft) { 'draft' } elseif ($r.isPrerelease) { 'pre-release' } elseif ($r.isLatest) { 'latest' } else { 'release' }
+        $kind = if ($r.tagName -cnotmatch $versionPattern) { 'assets (protected)' } elseif ($r.isDraft) { 'draft' } elseif ($r.isPrerelease) { 'pre-release' } elseif ($r.isLatest) { 'latest' } else { 'release' }
         $name = if ($r.name.Length -gt 38) { $r.name.Substring(0, 37) + '…' } else { $r.name }
-        Write-Color ('  ' + $r.tagName.PadRight(18)) violet_light -NoNewline
+        Write-Color ('  ' + $r.tagName.PadRight($tagWidth)) violet_light -NoNewline
         Write-Color $name.PadRight(40) ink -NoNewline
         Write-Color ([datetime]$r.publishedAt).ToString('yyyy-MM-dd').PadRight(14) muted -NoNewline
         Write-Color $kind $(if ($kind -eq 'latest') { 'success' } elseif ($kind -like 'assets*') { 'teal' } else { 'muted' })
     }
-    Write-Rule 90
+    Write-Rule ($tagWidth + 76)
 }
 
 function Invoke-Releases {
-    $repo = Get-RepoSlug
-    if (-not $repo) { Write-Color '  GitHub repository not found (no GitHub remote: upstream, origin or the one gh repo set-default chose).' danger; Wait-Back; return }
+    $repo = [pscustomobject]@{ Slug = 'etherealkeshii/Aurora-Viewer' }
+    if (-not $repo) { Write-Color '  GitHub repository not found (remote origin).' danger; Wait-Back; return }
     while ($true) {
         Show-Logo 'Releases'
         Write-Color "  Repository: $($repo.Slug)" muted
@@ -81,7 +87,7 @@ function Invoke-Releases {
             return
         }
         $pick = Show-Menu 'Manage releases' @(
-            @{ Key = '1'; Label = 'Create a release'; Hint = 'SemVer tag on the latest main, published by CI' }
+            @{ Key = '1'; Label = 'Create a release'; Hint = 'Keshii version tag on the distribution branch, published by CI' }
             @{ Key = '2'; Label = 'Delete a release'; Hint = 'release and tag, cannot be undone' }
         ) { Show-Logo 'Releases'; Write-Color "  Repository: $($repo.Slug)" muted; Show-ReleaseList $releases }
         switch ($pick.Key) {
@@ -92,35 +98,133 @@ function Invoke-Releases {
     }
 }
 
+function Read-KeshiiReleaseNotes($Tag, $Commit, $Context) {
+    $version = $Tag.TrimStart('v')
+    $date = Get-Date -Format 'd MMMM yyyy'
+    $changes = @()
+
+    if ($Context.Last) {
+        $range = "$($Context.Last.Tag)..$Commit"
+        $changes = @(git -C $Paths.Repo log --no-merges --format='- %s (%h)' $range)
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Could not retrieve release changes.'
+        }
+    }
+
+    $changeText = $changes -join "`n"
+
+    $notes = @"
+# Aurora Viewer-Keshii
+
+**Version:** $version
+**Prepared:** $date
+**Platforms:** Windows x64, Linux x64, macOS ARM64
+
+This independent distribution of Aurora Viewer includes my contributions, additional features and official Aurora Viewer improvements.
+
+## New features and improvements
+
+$changeText
+
+## Integrated upstream contributions
+
+## Latest upstream improvements
+
+## Installation
+
+### Windows x64
+Extract the Windows ZIP archive and launch aurora-viewer-Keshii.exe.
+
+### Linux x64
+Extract the Linux archive and launch aurora-viewer-Keshii.
+
+### macOS ARM64
+Mount the DMG and copy Aurora Viewer-Keshii.app into Applications.
+
+The macOS application is ad-hoc signed but is not Apple-notarised. macOS may require manual approval on first launch.
+
+## Release policy
+
+This distribution operates under an independent signed release policy.
+
+## Disclaimer
+
+This is an independent distribution and is not an official Aurora Viewer release. This software is not provided or supported by Linden Lab, the makers of Second Life.
+
+- [Distribution support](https://github.com/etherealkeshii/Aurora-Viewer/issues)
+- [Downloads](https://github.com/etherealkeshii/Aurora-Viewer/releases)
+- [Upstream project](https://github.com/Aurora-Viewer/Aurora-Viewer)
+- [Upstream privacy information](https://aurora-viewer.org/privacy/)
+
+Maintained by ケシイ.
+https://keshii.me/
+"@
+
+    $file = Join-Path ([IO.Path]::GetTempPath()) "aurora-release-$version.md"
+
+    try {
+        [IO.File]::WriteAllText($file, $notes, [Text.UTF8Encoding]::new($false))
+
+        Show-Logo 'Step 5/5 · Release description'
+        Write-Color '  Review and edit the proposed release notes.' ink
+        Write-Color "  File: $file" muted
+
+        if ($IsMacOS) {
+            & open -t $file
+        } elseif ($env:OS -eq 'Windows_NT') {
+            & notepad $file
+        } else {
+            & xdg-open $file
+        }
+
+        if (-not (Read-YesNo 'Have you finished editing and saved the release notes?')) {
+            return
+        }
+
+        $result = [IO.File]::ReadAllText($file).Trim()
+
+        if ([string]::IsNullOrWhiteSpace($result)) {
+            throw 'Release notes cannot be empty.'
+        }
+
+        return $result
+    } finally {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function New-AuroraRelease($Repo) {
     Show-Logo 'New release'
-    Write-Color '  Checking main and the PRs merged since the last release…' muted_dim
-    $run = Invoke-GhJson @('run', 'list', '-R', $Repo.Slug, '--workflow', 'CI', '--branch', 'main', '--limit', '1', '--json', 'status,conclusion,displayTitle') | Select-Object -First 1
-    if (-not $run -or $run.status -ne 'completed') {
-        Write-Color '  CI is still running on main: wait for it to finish, then try again.' warn; Wait-Back; return
+    if (-not (Test-ReleaseRights $Repo)) { Write-Color '  Release permission denied.' danger; Wait-Back; return }
+    $remote = git -C $Paths.Repo remote get-url --push fork
+    if ($remote -notin @('https://github.com/etherealkeshii/Aurora-Viewer.git', 'https://github.com/etherealkeshii/Aurora-Viewer', 'git@github.com:etherealkeshii/Aurora-Viewer.git')) {
+        Write-Color '  Unsafe release destination.' danger; Wait-Back; return
     }
-    if ($run.conclusion -ne 'success') {
-        Write-Color "  CI is red on main ($($run.displayTitle)): a broken version is not published." danger; Wait-Back; return
-    }
+    git -C $Paths.Repo fetch fork --quiet
+    if ($LASTEXITCODE -ne 0) { Write-Color '  Could not fetch the distribution branch.' danger; Wait-Back; return }
+    $commit = git -C $Paths.Repo rev-parse --verify refs/remotes/fork/keshii/distribution
+    if ($LASTEXITCODE -ne 0) { Write-Color '  Distribution branch not found.' danger; Wait-Back; return }
+    Write-Color "  Distribution commit: $commit" muted
     $ctx = Get-ReleaseContext $Repo
-    $base = if ($ctx.Last) { $ctx.Last.V } else { [pscustomobject]@{ Major = 0; Minor = 0; Patch = 0 } }
-    $types = @{}
-    foreach ($p in $ctx.Prs) { $t = Get-PrType $p; $types[$t] = 1 + [int]$types[$t] }
-    $summary = (($types.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Value) $($_.Name)" }) -join ', ')
-    if (-not $summary) { $summary = 'no PR' }
-    # SemVer before 1.0 (AGENTS.md): a new feature or a break bumps MINOR, the rest PATCH
-    $minor = "v$($base.Major).$($base.Minor + 1).0"
-    $patch = "v$($base.Major).$($base.Minor).$($base.Patch + 1)"
-    $major = "v$($base.Major + 1).0.0"
-    $suggested = if ($types['feature'] -or $types['breaking']) { $minor } else { $patch }
-
-    $items = @(@{ Key = '1'; Label = "$suggested (suggested)"; Hint = 'from the PR labels'; Tag = $suggested })
-    foreach ($t in @($patch, $minor, $major) | Where-Object { $_ -ne $suggested }) {
-        $hint = if ($t -eq $patch) { 'fixes only' } elseif ($t -eq $minor) { 'new features' } else { 'major version' }
-        $items += @{ Key = [string]($items.Count + 1); Label = $t; Hint = $hint; Tag = $t }
+    $summary = "$($ctx.Prs.Count) merged PRs"
+    git -C $Paths.Repo fetch origin --tags --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Color '  Could not fetch upstream Aurora version tags.' danger
+        Wait-Back; return
     }
-    $items += @{ Key = 'n'; Label = 'Other number…'; Hint = 'for example v0.3.0-beta.1 (pre-release)'; Tag = $null }
-    $pick = Show-Menu 'Step 1/4 · Which number?' $items {
+
+    $tags = @(git -C $Paths.Repo tag --list)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not retrieve version tags.'
+    }
+
+    $suggested = Get-NextKeshiiBetaTag $tags ([datetime]::UtcNow)
+
+    $items = @(
+        @{ Key = '1'; Label = $suggested; Hint = 'next Aurora beta version with Keshii suffix'; Tag = $suggested }
+        @{ Key = 'n'; Label = 'Other number…'; Hint = 'enter the Aurora version number'; Tag = $null }
+    )
+    $pick = Show-Menu 'Step 1/5 · Which number?' $items {
         Show-Logo 'New release'
         Write-Color "  Last release: $(if ($ctx.Last) { $ctx.Last.Tag } else { 'none' })" muted
         Write-Color "  PRs merged since: $($ctx.Prs.Count) ($summary)" muted
@@ -135,40 +239,46 @@ function New-AuroraRelease($Repo) {
     if (-not $pick) { return }
     $tag = $pick.Tag
     if (-not $tag) {
-        $tag = Read-Text 'Number (vMAJOR.MINOR.PATCH, suffix -… for a pre-release; empty: cancel):'
+        $tag = Read-Text 'Aurora version number (empty: cancel):'
         if (-not $tag) { return }
         if ($tag -notmatch '^v') { $tag = "v$tag" }
         if (-not (ConvertTo-Version $tag)) { Write-Color "  '$tag' is not a SemVer number." danger; Wait-Back; return }
     }
+    if ($tag -cnotmatch '-Keshii$') { $tag += '-Keshii' }
     if (git -C $Paths.Repo tag --list $tag) { Write-Color "  The tag $tag already exists." danger; Wait-Back; return }
-    $pre = [bool](ConvertTo-Version $tag).Suffix
-    $policy = Get-UpdatePolicy -RepoPath $Paths.Repo -Tag $tag -BaseTag $(if ($ctx.Last) { $ctx.Last.Tag }) -Ref origin/main
+    $policy = Get-UpdatePolicy -RepoPath $Paths.Repo -Tag $tag -BaseTag $(if ($ctx.Last) { $ctx.Last.Tag }) -Ref $commit
     $policy = Read-ReleaseMaintenance $policy
     if (-not $policy) { return }
+    $notes = Read-KeshiiReleaseNotes $tag $commit $ctx
+    if (-not $notes) { return }
     Show-Logo 'Confirmation of the release'
-    Write-Color "  $tag, on the latest main$(if ($pre) { ', as a pre-release' }): the Release workflow builds the viewer and publishes the Windows zip with the notes, then adds the Linux archive." ink
+    Write-Color "  $tag, from distribution commit $commit." ink
+    Write-Color '  Windows, Linux and macOS must all build successfully before publication.' ink
+    Write-Color '  The completed release will be marked Latest.' teal
     Write-Color "  Update: $(if ($policy.minimum_supported_version) { 'required for versions before ' + $policy.minimum_supported_version + " ($(Get-GraceText $policy.grace_hours) until they update)" } else { 'optional for every version' })." ink
     Write-Color "  Cache: $(if ($policy.cache_invalidation_before) { 'cleared for versions before ' + $policy.cache_invalidation_before } else { 'kept' })." ink
     Write-Color "  Settings: $(if ($policy.settings_reset_before) { 'reset for versions before ' + $policy.settings_reset_before } else { 'kept and migrated automatically if needed' })." ink
     if (-not (Read-YesNo "Create the release ${tag}?")) { return }
 
-    $message = "Aurora Viewer $($tag.TrimStart('v'))`n`nAurora-Update-Policy: $($policy | ConvertTo-Json -Compress -Depth 4)"
+    $message = "Aurora Viewer-Keshii $($tag.TrimStart('v'))`n`nAurora-Update-Policy: $($policy | ConvertTo-Json -Compress -Depth 4)"
+
+    $encodedNotes = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($notes))
+    $message += "`n`nKeshii-Release-Notes: $encodedNotes"
 
     if ($DryRun) {
-        Write-Color "  [dry run] tag $tag on origin/main with policy: $($policy | ConvertTo-Json -Compress -Depth 4)" teal
+        Write-Color "  [dry run] tag $tag on $commit with policy: $($policy | ConvertTo-Json -Compress -Depth 4)" teal
         Wait-Back; return
     }
-    git -C $Paths.Repo fetch origin --quiet
     $tagMessageFile = [IO.Path]::GetTempFileName()
     try {
         [IO.File]::WriteAllText($tagMessageFile, $message, [Text.UTF8Encoding]::new($false))
-        git -C $Paths.Repo tag -a $tag origin/main -F $tagMessageFile
+        git -C $Paths.Repo tag -a $tag $commit -F $tagMessageFile
         $tagExit = $LASTEXITCODE
     } finally {
         Remove-Item -LiteralPath $tagMessageFile -Force
     }
     if ($tagExit -ne 0) { Write-Color '  Could not create the tag.' danger; Wait-Back; return }
-    git -C $Paths.Repo push origin $tag
+    git -C $Paths.Repo push fork "refs/tags/$tag"
     if ($LASTEXITCODE -ne 0) {
         git -C $Paths.Repo tag -d $tag | Out-Null
         Write-Color '  GitHub refused the tag push: nothing was published.' danger; Wait-Back; return
@@ -181,20 +291,67 @@ function New-AuroraRelease($Repo) {
             Where-Object { $_.headBranch -eq $tag } | Select-Object -First 1 -ExpandProperty databaseId
     }
     if ($id) {
-        gh run watch $id -R $Repo.Slug --exit-status
-        if ($LASTEXITCODE -eq 0) {
+        $releaseSucceeded = $false
+        $maxAttempts = 5
+
+        while ($true) {
+            gh run watch $id -R $Repo.Slug --exit-status
+            if ($LASTEXITCODE -eq 0) {
+                $releaseSucceeded = $true
+                break
+            }
+
+            if ($Repo.Slug -cne 'etherealkeshii/Aurora-Viewer') { break }
+
+            $run = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id")
+            if (-not $run -or $run.status -ne 'completed') { break }
+            if ($run.run_attempt -ge $maxAttempts) {
+                Write-Color '  Maximum release attempts reached.' danger
+                break
+            }
+
+            $jobData = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id/attempts/$($run.run_attempt)/jobs?per_page=100")
+            $retryJob = $null
+
+            foreach ($job in $jobData.jobs) {
+                if ($job.name -notin @('windows', 'linux', 'macos')) { continue }
+                if ($job.conclusion -notin @('cancelled', 'failure')) { continue }
+                if (@($job.steps | Where-Object { $_.name -eq 'Build' -and $_.started_at }).Count -gt 0) { continue }
+
+                $annotations = Invoke-GhJson @('api', "repos/$($Repo.Slug)/check-runs/$($job.id)/annotations?per_page=100")
+                if (@($annotations | Where-Object {
+                    $_.message -match 'not acquired by Runner of type hosted'
+                }).Count -gt 0) {
+                    $retryJob = $job
+                    break
+                }
+            }
+
+            if (-not $retryJob) { break }
+
+            Write-Color "  Hosted runner unavailable for $($retryJob.name)." warn
+            Write-Color "  Retrying platform job in 60 seconds (attempt $($run.run_attempt + 1) of $maxAttempts)." teal
+            Start-Sleep -Seconds 60
+
+            $currentRun = Invoke-GhJson @('api', "repos/$($Repo.Slug)/actions/runs/$id")
+            if (-not $currentRun -or $currentRun.status -ne 'completed' -or $currentRun.run_attempt -ne $run.run_attempt) { break }
+
+            gh api --method POST "repos/$($Repo.Slug)/actions/jobs/$($retryJob.id)/rerun"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Color '  GitHub refused the job retry.' danger
+                break
+            }
+
+            Start-Sleep -Seconds 10
+        }
+
+        if ($releaseSucceeded) {
             $url = gh release view $tag -R $Repo.Slug --json url --jq .url 2>$null
             Write-Color "  Release published: $url" success
             if ($url -and (Read-YesNo 'Open it in the browser?')) { Open-External $url }
         } else {
-            $url = gh release view $tag -R $Repo.Slug --json url --jq .url 2>$null
-            if ($url) {
-                # the Windows release is out: only the Linux archive is missing
-                Write-Color "  Release published for Windows: $url" success
-                Write-Color "  The Linux build failed: gh run view $id --log-failed (a passing failure: gh run rerun $id --failed)." warn
-            } else {
-                Write-Color "  The Release workflow failed: gh run view $id --log-failed (the tag $tag exists; delete it here to start again)." danger
-            }
+            Write-Color "  Release workflow failed. Inspect the failed jobs: gh run view $id -R $($Repo.Slug) --log-failed" danger
+            Write-Color '  No partial platform release should be published.' warn
         }
     } else {
         Write-Color '  Release workflow not found yet: follow it on GitHub (Actions tab).' warn
@@ -203,6 +360,7 @@ function New-AuroraRelease($Repo) {
 }
 
 function Remove-AuroraRelease($Repo, $Releases) {
+    if (-not (Test-ReleaseRights $Repo)) { Write-Color '  Release permission denied.' danger; Wait-Back; return }
     if (-not $Releases) { Write-Color '  No release to delete.' muted; Wait-Back; return }
     $shortcuts = @(1..9 | ForEach-Object { [string]$_ }) + @(97..122 | ForEach-Object { [string][char]$_ })
     $items = @()
@@ -214,7 +372,7 @@ function Remove-AuroraRelease($Repo, $Releases) {
     if (-not $pick) { return }
     $tag = $pick.Release.tagName
     # releases that hold assets (assets-1: the 3D emoji font that older commits download)
-    if ($tag -notmatch '^v\d') {
+    if ($tag -cnotmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-Keshii$') {
         Write-Color "  $tag is not a version: it holds files older commits need (the 3D emoji font for assets-1). Protected." warn
         Wait-Back; return
     }

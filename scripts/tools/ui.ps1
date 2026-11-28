@@ -96,6 +96,7 @@ function Show-Logo([string]$Subtitle) {
     Write-Aurora '    ▄▀█ █ █ █▀█ █▀█ █▀█ ▄▀█'
     Write-Aurora '    █▀█ █▄█ █▀▄ █▄█ █▀▄ █▀█'
     Write-Color "    V  I  E  W  E  R    ·  $Subtitle" violet_light
+    Write-Color "    By ケシイ (Keshii Ethereal)" teal
     Write-Host ''
 }
 

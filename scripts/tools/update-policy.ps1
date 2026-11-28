@@ -89,7 +89,7 @@ function Read-ReleaseMaintenance($Policy) {
         $items += @{ Key = '2'; Label = "Require v$core"; Hint = 'every earlier version must update (grace period chosen next)'; Minimum = $core }
     }
     $items += @{ Key = [string]($items.Count + 1); Label = 'Other minimum…'; Hint = 'an earlier X.Y.Z version'; Minimum = $null; Other = $true }
-    $step = Show-Menu 'Step 2/4 · Minimum version' $items {
+    $step = Show-Menu 'Step 2/5 · Minimum version' $items {
         Show-Logo 'New release'
         Write-Color "  Chosen version: v$($Policy.version)" teal
         Write-Color "  Minimum today: $(if ($floor) { $floor + ' (a version below it cannot log in before updating)' } else { 'none' })." muted
@@ -107,7 +107,7 @@ function Read-ReleaseMaintenance($Policy) {
     $newMinimum = $minimum -and $minimum -ne $Policy.minimum_supported_version
     $grace = $Policy.grace_hours
     if ($newMinimum) {
-        $graceStep = Show-Menu 'Step 2/4 · Grace period' @(
+        $graceStep = Show-Menu 'Step 2/5 · Grace period' @(
             @{ Key = '1'; Label = '12 hours'; Hint = 'usual choice: a show or a set under way ends before the update is needed'; Hours = $null }
             @{ Key = '2'; Label = '24 hours'; Hint = 'a whole day of events'; Hours = 24 }
             @{ Key = '3'; Label = '72 hours'; Hint = 'the longest: a weekend'; Hours = 72 }
@@ -122,7 +122,7 @@ function Read-ReleaseMaintenance($Policy) {
         $grace = $graceStep.Hours
     }
     $minimumText = if ($minimum) { "required below $minimum ($(Get-GraceText $grace))" } else { 'every update optional' }
-    $cache = Show-Menu 'Step 3/4 · User cache' @(
+    $cache = Show-Menu 'Step 3/5 · User cache' @(
         @{ Key = '1'; Label = 'Keep the cache'; Hint = 'usual choice, no data to download again'; Clear = $false }
         @{ Key = '2'; Label = "Force cache invalidation"; Hint = 'cache cleared at the first start of this version'; Clear = $true }
     ) {
@@ -132,7 +132,7 @@ function Read-ReleaseMaintenance($Policy) {
     }
     if (-not $cache) { return }
     $cacheThreshold = if ($cache.Clear) { $core } else { $Policy.cache_invalidation_before }
-    $settings = Show-Menu 'Step 4/4 · User settings' @(
+    $settings = Show-Menu 'Step 4/5 · User settings' @(
         @{ Key = '1'; Label = 'Keep and migrate automatically'; Hint = 'migrations coded in the viewer, usual choice'; Reset = $false }
         @{ Key = '2'; Label = 'Reset the settings'; Hint = 'back to the default values; announced before installation'; Reset = $true }
     ) {
