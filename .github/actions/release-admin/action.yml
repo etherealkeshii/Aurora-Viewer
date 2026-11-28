@@ -20,9 +20,19 @@ runs:
         ACTOR: ${{ github.triggering_actor }}
         ENFORCE: ${{ inputs.enforce }}
       run: |
-        if [ "$ENFORCE" = true ] && [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$GITHUB_RUN_ATTEMPT" = 1 ]; then
-          echo "Scheduled run: no one to check."
-          exit 0
+        if [ "$GITHUB_REPOSITORY" != "etherealkeshii/Aurora-Viewer" ]; then
+          echo "::error::Keshii releases are restricted to the independent fork."
+          exit 1
+        fi
+        if [ "$ENFORCE" = true ]; then
+          if [ "$GITHUB_ACTOR" != "etherealkeshii" ] || [ "$ACTOR" != "etherealkeshii" ]; then
+            echo "::error::Only the Keshii distribution owner may initiate or rerun a release."
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            echo "::error::Scheduled Keshii releases are disabled."
+            exit 1
+          fi
         fi
         # admin, write (maintain included), triage, read or none
         if ! perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ACTOR/permission" --jq .permission); then

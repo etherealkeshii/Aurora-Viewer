@@ -1,85 +1,63 @@
 name: Release
 
-# A version tag (SemVer: v0.2.0, v0.2.1…) pushed by an admin builds the
-# viewer and publishes the release with notes grouped by PR label: the
-# Windows zip (the one the updater installs) and its crash symbols, then the
-# Linux archive and the macOS application. A pull request that changes these
-# release files gets a dry run of the three jobs (the version Git describes,
-# the symbols, the Linux archive and the macOS application kept as the run's
-# artifacts, nothing published): no agent can try the Linux or macOS build
-# on its PC, and the symbols need the release build.
-# The Nightly workflow calls it with the beta tag it has just pushed (a tag
-# pushed with the workflow token starts no workflow by itself); a tag with
-# a pre-release part is published as a GitHub pre-release.
-# The three build jobs run with a read-only token and hand their files to
-# the publish jobs as the run's artifacts; only the publish jobs, which never
-# run on a pull request, can write the release. They sign each package's
-# .sha256 file and the update policy first (scripts/sign-release.ps1, the
-# key of the `release` environment, which only main and the stable tags can
-# use): the updater installs nothing else (docs/UPDATES.md, "Signed
-# updates"). A dry run signs the macOS
-# application ad hoc, whatever the repository's signing setup.
 on:
   push:
-    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
-  workflow_call:
-    inputs:
-      tag:
-        description: Version tag to build and publish (already pushed)
-        required: true
-        type: string
-  pull_request:
-    paths:
-      - .github/workflows/release.yml
-      - scripts/package.ps1
-      - packaging/linux/**
-      - packaging/macos/**
-      - scripts/package-macos.ps1
-      - assets/branding/aurora.icns
-      - scripts/verify-version.ps1
-      - scripts/sign-release.ps1
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*-Keshii']
 
-# a new push to a pull request stops its previous dry run; a release (a
-# tag, or the nightly's call) is never cancelled: its group is its own run
 concurrency:
-  group: release-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: true
+  group: keshii-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # Only an admin publishes: a beta tag pushed by hand, the Nightly run by
-  # hand or a run started again by someone else stops here (the stable tags'
-  # ruleset already refuses the others). A re-run of the failed jobs alone
-  # keeps this job's result: it only publishes what the run already built.
   authorize:
-    if: github.event_name != 'pull_request'
+    if: github.repository == 'etherealkeshii/Aurora-Viewer'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          sparse-checkout: .github
+          fetch-depth: 0
           persist-credentials: false
+
       - uses: ./.github/actions/release-admin
+
+      - name: Verify distribution source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != push ] || [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "::error::Keshii releases require an explicitly pushed version tag."
+            exit 1
+          fi
+
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?-Keshii$ ]]; then
+            echo "::error::Invalid Keshii release tag."
+            exit 1
+          fi
+
+          git fetch --no-tags https://github.com/etherealkeshii/Aurora-Viewer.git refs/heads/keshii/distribution:refs/remotes/fork/keshii/distribution
+
+          tagged_commit="$(git rev-parse HEAD)"
+
+          if ! git merge-base --is-ancestor "$tagged_commit" refs/remotes/fork/keshii/distribution; then
+            echo "::error::Release commit is not part of the Keshii distribution branch."
+            exit 1
+          fi
+
+          echo "Verified distribution commit: $tagged_commit"
+
 
   windows:
     needs: authorize
-    if: ${{ !cancelled() && (needs.authorize.result == 'success' || github.event_name == 'pull_request') }}
     runs-on: windows-latest
     permissions:
       contents: read
-      # SignPath reads the job and downloads the unsigned exe (Sign below)
       actions: read
-    outputs:
-      signed: ${{ steps.signed.outputs.signed }}
     env:
-      TAG: ${{ inputs.tag || github.event_name == 'push' && github.ref_name || 'dry-run' }}
-      # Code signing (docs/UPDATES.md, "Code signing"): a stable tag only,
-      # once the repository turns it on with the SIGNPATH_SIGN_RELEASES
-      # variable. A beta (a tag with a pre-release part, the nightly's) stays
-      # unsigned: each signature waits for an approver in SignPath.
-      SIGN: ${{ github.event_name != 'pull_request' && vars.SIGNPATH_SIGN_RELEASES == 'true' && !contains(inputs.tag || github.ref_name, '-') }}
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,33 +66,24 @@ jobs:
       - name: Rust stable
         run: rustup toolchain install --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      # the version comes from the tag; a dry run keeps the one Git describes
-      # (aurora-version refuses a tag that is not the checked-out commit's)
       - name: Build
         shell: pwsh
         run: |
-          if ($env:TAG -ne 'dry-run') { $env:AURORA_VERSION_TAG = $env:TAG }
-          # the OpenXR loader built in: the published exe needs nothing beside it
+          $env:AURORA_VERSION_TAG = $env:TAG
           cargo build --release --locked -p aurora-viewer --features xr-static-loader
       - name: Verify compiled version
-        if: env.TAG != 'dry-run'
         shell: pwsh
         run: |
-          ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer.exe -Tag $env:TAG
-          # the exe's ProductVersion (build.rs), which SignPath checks
+          ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer-Keshii.exe -Tag $env:TAG
           "VERSION=$($env:TAG -replace '^v', '')" >> $env:GITHUB_ENV
-      # Breakpad symbols of the exe for the crash reports (docs/BUG_REPORTING.md):
-      # the release profile's line-tables-only PDB, read through the path the
-      # exe records, stored as <file>.pdb/<debug id>/<file>.sym, the layout
-      # symbolizers look up. The PDB itself is not published.
       - name: Install dump_syms
         run: cargo install dump_syms --locked --version 2.3.9
       - name: Symbols
         shell: pwsh
         run: |
-          dump_syms target/release/aurora-viewer.exe --store symbols
+          dump_syms target/release/aurora-viewer-Keshii.exe --store symbols
           if ($LASTEXITCODE -ne 0) { throw 'dump_syms failed' }
-          $zip = "Aurora-Viewer-$env:TAG-windows-x64-symbols.zip"
+          $zip = "Aurora-Viewer-$($env:TAG -replace '^v', '')-windows-x64-symbols.zip"
           & 7z a -tzip -mx=9 $zip ./symbols/* | Out-Null
           if ($LASTEXITCODE -ne 0) { throw '7z failed' }
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -122,44 +91,18 @@ jobs:
           Get-ChildItem symbols -Recurse -File | ForEach-Object { "$($_.FullName.Substring((Resolve-Path symbols).Path.Length + 1)) $([math]::Round($_.Length / 1MB)) MB" }
           "zip $([math]::Round((Get-Item $zip).Length / 1MB)) MB"
           "SYMBOLS=$zip" >> $env:GITHUB_ENV
-      # after the symbols: signing does not change the code nor the debug
-      # id, so they still match the published exe. Up to an hour for an
-      # approver to accept the request in SignPath (link in the step's log);
-      # a refused or expired request fails the run before anything is
-      # published.
-      - name: Sign (SignPath)
-        if: env.SIGN == 'true'
-        uses: ./.github/actions/signpath-sign
-        with:
-          exe: target/release/aurora-viewer.exe
-          version: ${{ env.VERSION }}
-          signing-policy: release-signing
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          trusted: 'true'
-          timeout: '3600'
-      - name: Verify signed version
-        id: signed
-        if: env.SIGN == 'true'
-        shell: pwsh
-        run: |
-          ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer.exe -Tag $env:TAG
-          "signed=true" >> $env:GITHUB_OUTPUT
       - name: Package
-        if: env.TAG != 'dry-run'
         shell: pwsh
         run: |
-          $v = $env:TAG
+          $v = $env:TAG -replace '^v', ''
           $dir = "Aurora-Viewer-$v-windows-x64"
-          ./scripts/package.ps1 -Exe target/release/aurora-viewer.exe -Out $dir
+          ./scripts/package.ps1 -Exe target/release/aurora-viewer-Keshii.exe -Out $dir
           Compress-Archive -Path $dir -DestinationPath "$dir.zip"
           $hash = (Get-FileHash -LiteralPath "$dir.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $dir.zip" | Set-Content -LiteralPath "$dir.zip.sha256" -Encoding utf8NoBOM
-          ./scripts/write-update-policy.ps1 -Tag $v
+          ./scripts/write-update-policy.ps1 -Tag $env:TAG
           "ZIP=$dir.zip" >> $env:GITHUB_ENV
-      # what the publish job puts in the release
       - name: Release files
-        if: env.TAG != 'dry-run'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-windows
@@ -172,86 +115,17 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
-      - name: Dry-run symbols
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: symbols-windows-dry-run
-          path: |
-            ${{ env.SYMBOLS }}
-            ${{ env.SYMBOLS }}.sha256
-          compression-level: 0
 
-  # Creates the release with the Windows files. The publish jobs are the only
-  # ones whose token can write, and they never run on a pull request. The
-  # header (Linden Lab disclaimer, support, privacy: Third-Party Viewer
-  # Policy §1.c) comes before the generated notes.
-  publish-windows:
-    needs: windows
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: write
-    env:
-      TAG: ${{ inputs.tag || github.event_name == 'push' && github.ref_name || 'dry-run' }}
-      SIGNED: ${{ needs.windows.outputs.signed }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # the signing script and the keys the viewer trusts
-          sparse-checkout: |
-            .github
-            scripts
-            crates/aurora-updater/src
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-windows
-      - name: Sign for the updater
-        shell: pwsh
-        env:
-          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-          UPDATE_SIGNING_KEY_NEXT: ${{ secrets.UPDATE_SIGNING_KEY_NEXT }}
-        run: ./scripts/sign-release.ps1 -Files "Aurora-Viewer-$env:TAG-windows-x64.zip.sha256", aurora-update-policy.json
-      - name: Publish
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          $v = $env:TAG
-          $zip = "Aurora-Viewer-$v-windows-x64.zip"
-          $symbols = "Aurora-Viewer-$v-windows-x64-symbols.zip"
-          $notes = '.github/release-notes-header.md'
-          # a signed release names its signing first: the SignPath
-          # Foundation's terms ask for it on the download pages
-          if ($env:SIGNED -eq 'true') {
-            $line = 'The Windows executable is signed. Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). [Code signing policy](https://aurora-viewer.org/code-signing/)'
-            $notes = Join-Path $env:RUNNER_TEMP 'release-notes-header.md'
-            Set-Content -LiteralPath $notes -Value @($line, '', (Get-Content -Raw -LiteralPath '.github/release-notes-header.md')) -Encoding utf8NoBOM
-          }
-          $ghArgs = @($v, $zip, "$zip.sha256", "$zip.sha256.sig", $symbols, "$symbols.sha256", 'aurora-update-policy.json', 'aurora-update-policy.json.sig', '--title', "Aurora Viewer $v", '--notes-file', $notes, '--generate-notes', '--verify-tag')
-          if ($v -match '-') { $ghArgs += '--prerelease' }   # v0.3.0-beta.1
-          gh release create @ghArgs
-
-  # The Linux archive joins the release once it is published: a Linux build
-  # that fails leaves the Windows release in place and the run red (re-run
-  # the failed jobs after a passing failure; a fix in the code needs a new
-  # version). Ubuntu 24.04: glibc 2.39, so current distributions (Arch,
-  # Fedora, Ubuntu 24.04 and later) run it.
   linux:
     needs: windows
-    if: ${{ !cancelled() && (needs.windows.result == 'success' || github.event_name == 'pull_request') }}
     runs-on: ubuntu-24.04
     env:
-      TAG: ${{ inputs.tag || github.event_name == 'push' && github.ref_name || 'dry-run' }}
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      # ALSA for the sound, the rest for winit's X11 / Wayland back ends
       - name: System libraries
         run: |
           sudo apt-get update
@@ -259,50 +133,27 @@ jobs:
       - name: Rust stable
         run: rustup toolchain install --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      # the version comes from the tag; a dry run keeps the one Git describes
-      # (aurora-version refuses a tag that is not the checked-out commit's)
-      # debug info stays out of the binary, as the Windows exe leaves it in a
-      # .pdb that is not published (the binary is about 490 MB with it)
       - name: Build
         env:
           CARGO_PROFILE_RELEASE_STRIP: debuginfo
         run: |
-          if [ "$TAG" != dry-run ]; then export AURORA_VERSION_TAG="$TAG"; fi
+          export AURORA_VERSION_TAG="$TAG"
           cargo build --release --locked -p aurora-viewer
       - name: Verify compiled version
-        if: env.TAG != 'dry-run'
         shell: pwsh
-        run: ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer -Tag $env:TAG
-      # tar keeps the executable bit
+        run: ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer-Keshii -Tag $env:TAG
       - name: Package
         shell: pwsh
         run: |
-          $v = $env:TAG
+          $v = $env:TAG -replace '^v', ''
           $dir = "Aurora-Viewer-$v-linux-x64"
-          ./scripts/package.ps1 -Exe target/release/aurora-viewer -Out $dir
+          ./scripts/package.ps1 -Exe target/release/aurora-viewer-Keshii -Out $dir
           & tar -czf "$dir.tar.gz" $dir
           if ($LASTEXITCODE -ne 0) { throw 'tar failed' }
           $hash = (Get-FileHash -LiteralPath "$dir.tar.gz" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $dir.tar.gz" | Set-Content -LiteralPath "$dir.tar.gz.sha256" -Encoding utf8NoBOM
           "ARCHIVE=$dir.tar.gz" >> $env:GITHUB_ENV
-      # the publish jobs sign with the release key, which a pull request
-      # cannot read: its dry run signs with a key of its own, and a key the
-      # viewer does not trust must stop the script
-      - name: Dry-run signature
-        if: github.event_name == 'pull_request'
-        shell: pwsh
-        run: |
-          $key = Join-Path $env:RUNNER_TEMP 'dry-run-key.pem'
-          $der = Join-Path $env:RUNNER_TEMP 'dry-run-key.der'
-          openssl genpkey -algorithm ed25519 -out $key
-          openssl pkey -in $key -pubout -outform DER -out $der
-          $public = -join ([IO.File]::ReadAllBytes($der)[12..43] | ForEach-Object { $_.ToString('x2') })
-          ./scripts/sign-release.ps1 -Files "$env:ARCHIVE.sha256" -KeyFile $key -PublicKey $public
-          $refused = $false
-          try { ./scripts/sign-release.ps1 -Files "$env:ARCHIVE.sha256" -KeyFile $key -PublicKey ('00' * 32) } catch { $refused = $true }
-          if (-not $refused) { throw 'A key the viewer does not trust was accepted.' }
       - name: Release files
-        if: env.TAG != 'dry-run'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-linux
@@ -312,65 +163,13 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
-      - name: Dry-run archive
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: viewer-linux-dry-run
-          path: |
-            ${{ env.ARCHIVE }}
-            ${{ env.ARCHIVE }}.sha256
-          compression-level: 0
 
-  publish-linux:
-    needs: [linux, publish-windows]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: write
-    env:
-      TAG: ${{ inputs.tag || github.event_name == 'push' && github.ref_name || 'dry-run' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: |
-            scripts
-            crates/aurora-updater/src
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-linux
-      - name: Sign for the updater
-        shell: pwsh
-        env:
-          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-          UPDATE_SIGNING_KEY_NEXT: ${{ secrets.UPDATE_SIGNING_KEY_NEXT }}
-        run: ./scripts/sign-release.ps1 -Files "Aurora-Viewer-$env:TAG-linux-x64.tar.gz.sha256"
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          archive="Aurora-Viewer-$TAG-linux-x64.tar.gz"
-          gh release upload "$TAG" "$archive" "$archive.sha256" "$archive.sha256.sig"
-
-  # The macOS application (Apple Silicon) joins the release like the Linux
-  # archive: "Aurora Viewer.app" in a disk image, next to a link to
-  # Applications to drag it onto, as Mac applications are installed. Signed with the Developer ID, then notarized and stapled,
-  # when the repository has the Apple secrets (docs/MACOS.md, "Signing");
-  # signed ad hoc otherwise, which macOS opens only after "Open Anyway" in
-  # Privacy & Security. The updater does not install it: the viewer points
-  # to the release page, as on Linux.
   macos:
     needs: windows
-    if: ${{ !cancelled() && (needs.windows.result == 'success' || github.event_name == 'pull_request') }}
     runs-on: macos-15
     env:
-      TAG: ${{ inputs.tag || github.event_name == 'push' && github.ref_name || 'dry-run' }}
-      APP: Aurora Viewer.app
-      # never on a pull request: its dry run signs ad hoc
-      SIGNED: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERTIFICATE_P12 != '' && secrets.APPLE_API_KEY_P8 != '' }}
+      TAG: ${{ github.ref_name }}
+      APP: Aurora Viewer-Keshii.app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -379,82 +178,38 @@ jobs:
       - name: Rust stable
         run: rustup toolchain install --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      # (see the Linux job: the tag's version, no debug info in the binary)
       - name: Build
         env:
           CARGO_PROFILE_RELEASE_STRIP: debuginfo
         run: |
-          if [ "$TAG" != dry-run ]; then export AURORA_VERSION_TAG="$TAG"; fi
+          export AURORA_VERSION_TAG="$TAG"
           cargo build --release --locked -p aurora-viewer
       - name: Verify compiled version
-        if: env.TAG != 'dry-run'
         shell: pwsh
-        run: ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer -Tag $env:TAG
+        run: ./scripts/verify-version.ps1 -Exe target/release/aurora-viewer-Keshii -Tag $env:TAG
       - name: Application
         shell: pwsh
-        run: ./scripts/package-macos.ps1 -Exe target/release/aurora-viewer -Out $env:APP
-      # the certificate lives in a keychain of this run only; the hardened
-      # runtime and a secure timestamp are what the notarization requires
-      - name: Sign (Developer ID) and notarize
-        if: env.SIGNED == 'true'
-        env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          API_KEY: ${{ secrets.APPLE_API_KEY_P8 }}
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: |
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          password="$(uuidgen)"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          rm "$RUNNER_TEMP/certificate.p12"
-          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" > /dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          identity="$(security find-identity -v -p codesigning "$keychain" | awk -v team="($TEAM_ID)" '/Developer ID Application/ && index($0, team) { print $2; exit }')"
-          if [ -z "$identity" ]; then echo "no Developer ID Application identity of team $TEAM_ID in the certificate"; exit 1; fi
-          codesign --force --options runtime --timestamp --entitlements packaging/macos/aurora-viewer.entitlements --sign "$identity" "$APP"
-          printf '%s' "$API_KEY" > "$RUNNER_TEMP/notary.p8"
-          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --key "$RUNNER_TEMP/notary.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --wait --timeout 1h --output-format json > "$RUNNER_TEMP/notary.json"
-          status="$(plutil -extract status raw -o - "$RUNNER_TEMP/notary.json" 2>/dev/null || true)"
-          if [ "$status" != Accepted ]; then
-            cat "$RUNNER_TEMP/notary.json"
-            id="$(plutil -extract id raw -o - "$RUNNER_TEMP/notary.json" 2>/dev/null || true)"
-            if [ -n "$id" ]; then xcrun notarytool log "$id" --key "$RUNNER_TEMP/notary.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER"; fi
-            rm -f "$RUNNER_TEMP/notary.p8"
-            exit 1
-          fi
-          rm -f "$RUNNER_TEMP/notary.p8"
-          xcrun stapler staple "$APP"
-          security delete-keychain "$keychain"
+        run: ./scripts/package-macos.ps1 -Exe target/release/aurora-viewer-Keshii -Out $env:APP
       - name: Sign (ad hoc)
-        if: env.SIGNED != 'true'
         run: codesign --force --sign - "$APP"
-      # the signature holds and the signed executable starts
       - name: Check the application
         run: |
           codesign --verify --strict --verbose=2 "$APP"
-          "$APP/Contents/MacOS/aurora-viewer" --version
-          if [ "$SIGNED" = true ]; then spctl --assess --type execute --verbose=2 "$APP"; fi
-      # a compressed read-only image (UDZO); ditto copies the bundle with its
-      # signature (and its stapled ticket)
+          test "$(uname -m)" = arm64
+          lipo "$APP/Contents/MacOS/aurora-viewer-Keshii" -verify_arch arm64
+          "$APP/Contents/MacOS/aurora-viewer-Keshii" --version
       - name: Disk image
         run: |
-          dmg="Aurora-Viewer-$TAG-macos-arm64.dmg"
+          dmg="Aurora-Viewer-${TAG#v}-macOS-arm64.dmg"
           stage="$RUNNER_TEMP/dmg"
           mkdir -p "$stage"
           ditto "$APP" "$stage/$APP"
           ln -s /Applications "$stage/Applications"
-          hdiutil create -volname "Aurora Viewer" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+          hdiutil create -volname "Aurora Viewer-Keshii" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+          hdiutil verify "$dmg"
           shasum -a 256 "$dmg" > "$dmg.sha256"
           echo "ARCHIVE=$dmg" >> "$GITHUB_ENV"
       - name: Release files
-        if: env.TAG != 'dry-run'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-macos
@@ -464,47 +219,110 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
-      - name: Dry-run application
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: viewer-macos-dry-run
-          path: |
-            ${{ env.ARCHIVE }}
-            ${{ env.ARCHIVE }}.sha256
-          compression-level: 0
 
-  # the disk image is signed too: a Mac viewer points only to a release
-  # whose image is genuine, though it does not install it
-  publish-macos:
-    needs: [macos, publish-windows]
-    if: github.event_name != 'pull_request'
+  publish:
+    needs: [authorize, windows, linux, macos]
+    if: ${{ success() && github.repository == 'etherealkeshii/Aurora-Viewer' && github.event_name == 'push' && github.ref_type == 'tag' && github.actor == 'etherealkeshii' && github.triggering_actor == 'etherealkeshii' }}
     runs-on: ubuntu-latest
-    environment: release
+    environment: keshii-release
     permissions:
       contents: write
+      actions: read
     env:
-      TAG: ${{ inputs.tag || github.event_name == 'push' && github.ref_name || 'dry-run' }}
+      TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          sparse-checkout: |
-            scripts
-            crates/aurora-updater/src
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+
+      - uses: ./.github/actions/release-admin
+
+      - name: Download Windows files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-windows
+
+      - name: Download Linux files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-linux
+
+      - name: Download macOS files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-macos
+
+      - name: Verify release files
+        shell: bash
+        run: |
+          version="${TAG#v}"
+          for package in             "Aurora-Viewer-$version-windows-x64.zip"             "Aurora-Viewer-$version-windows-x64-symbols.zip"             "Aurora-Viewer-$version-linux-x64.tar.gz"             "Aurora-Viewer-$version-macOS-arm64.dmg"; do
+            test -s "$package"
+            test -s "$package.sha256"
+            sha256sum --check --strict "$package.sha256"
+          done
+          test -s aurora-update-policy.json
+
       - name: Sign for the updater
         shell: pwsh
         env:
-          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-          UPDATE_SIGNING_KEY_NEXT: ${{ secrets.UPDATE_SIGNING_KEY_NEXT }}
-        run: ./scripts/sign-release.ps1 -Files "Aurora-Viewer-$env:TAG-macos-arm64.dmg.sha256"
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
+          UPDATE_SIGNING_KEY: ${{ secrets.KESHII_UPDATE_SIGNING_KEY }}
         run: |
-          dmg="Aurora-Viewer-$TAG-macos-arm64.dmg"
-          gh release upload "$TAG" "$dmg" "$dmg.sha256" "$dmg.sha256.sig"
+          $v = $env:TAG -replace '^v', ''
+          ./scripts/sign-release.ps1 -Files @(
+            "Aurora-Viewer-$v-windows-x64.zip.sha256",
+            "Aurora-Viewer-$v-windows-x64-symbols.zip.sha256",
+            "Aurora-Viewer-$v-linux-x64.tar.gz.sha256",
+            "Aurora-Viewer-$v-macOS-arm64.dmg.sha256",
+            "aurora-update-policy.json"
+          )
+
+      - name: Prepare release description
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          annotation="$(git tag -l "$TAG" --format='%(contents)')"
+          encoded="$(printf '%s\\n' "$annotation" | sed -n 's/^Keshii-Release-Notes: //p')"
+
+          notes="$RUNNER_TEMP/keshii-release-notes.md"
+
+          if [ -n "$encoded" ]; then
+            printf '%s' "$encoded" | base64 --decode > "$notes"
+            test -s "$notes"
+          else
+            cp .github/release-notes-header.md "$notes"
+          fi
+
+          cat >> "$notes" <<'EOF'
+
+          ## Build verification
+
+          - Windows x64 compilation and packaging successful.
+          - Linux x64 compilation and packaging successful.
+          - macOS ARM64 compilation and packaging successful.
+          - macOS application code signature verified.
+          - macOS DMG integrity verified.
+          - Packaged executable versions verified.
+          - Release package checksums verified.
+          - Independent update signatures generated.
+          EOF
+
+          echo "RELEASE_NOTES=$notes" >> "$GITHUB_ENV"
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: etherealkeshii/Aurora-Viewer
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          files=()
+          for package in             "Aurora-Viewer-$version-windows-x64.zip"             "Aurora-Viewer-$version-windows-x64-symbols.zip"             "Aurora-Viewer-$version-linux-x64.tar.gz"             "Aurora-Viewer-$version-macOS-arm64.dmg"; do
+            files+=("$package" "$package.sha256" "$package.sha256.sig")
+          done
+          files+=(aurora-update-policy.json aurora-update-policy.json.sig)
+          gh release create "$TAG" "${files[@]}"             --repo "$GH_REPO"             --title "Aurora Viewer-Keshii $version"             --notes-file "$RELEASE_NOTES"             --generate-notes             --verify-tag             --draft
+          gh release edit "$TAG"             --repo "$GH_REPO"             --draft=false             --prerelease=false             --latest
