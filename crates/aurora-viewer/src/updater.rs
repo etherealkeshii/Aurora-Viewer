@@ -121,6 +121,7 @@ enum Event {
         generation: u64,
     },
     Progress(Progress),
+    KeshiiPolicyChecked(Result<aurora_updater::keshii_policy::SignedPolicy, Failure>),
     Prepared(Result<Workspace, Failure>),
     Handoff(Result<(), Failure>),
 }
@@ -159,6 +160,14 @@ pub struct Updater {
     /// Until when a release below its minimum still lets this version sign
     /// in (`grace_deadline`).
     grace_until: Option<SystemTime>,
+    keshii_policy: Option<aurora_updater::keshii_policy::Policy>,
+    keshii_policy_pending: bool,
+    keshii_policy_last_check: Option<Instant>,
+    keshii_policy_deadline: Option<SystemTime>,
+    keshii_policy_initialized: bool,
+    #[cfg(test)]
+    keshii_policy_test_enabled: bool,
+    keshii_policy_notice: Option<(SystemTime, bool)>,
 }
 
 pub fn checks_enabled() -> bool {
@@ -203,6 +212,14 @@ impl Updater {
             announced: String::new(),
             notice: None,
             grace_until: None,
+            keshii_policy: None,
+            keshii_policy_pending: false,
+            keshii_policy_last_check: None,
+            keshii_policy_deadline: None,
+            keshii_policy_initialized: false,
+            #[cfg(test)]
+            keshii_policy_test_enabled: false,
+            keshii_policy_notice: None,
         };
         // Disabled still checks the minimum supported version, as Firestorm does.
         if enabled {
@@ -215,11 +232,125 @@ impl Updater {
         this
     }
 
+    fn keshii_policy_enabled(&self) -> bool {
+        #[cfg(test)]
+        if self.keshii_policy_test_enabled {
+            return true;
+        }
+
+        self.enabled && aurora_version::version().ends_with("-Keshii") && aurora_updater::test_environment().is_none()
+    }
+
+    fn follow_keshii_policy(&mut self, settings: &mut Settings) {
+        self.keshii_policy_deadline = None;
+
+        let Some(policy) = self.keshii_policy.as_ref() else {
+            return;
+        };
+
+        let installed = aurora_version::version();
+
+        if !aurora_updater::is_newer(&policy.latest_version, installed) {
+            return;
+        }
+
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs());
+
+        let changed = !settings.keshii_update_grace.contains_key(installed);
+
+        let first_seen = *settings.keshii_update_grace.entry(installed.to_string()).or_insert(now);
+
+        self.keshii_policy_deadline = aurora_updater::keshii_policy::expiry_deadline(policy, installed, first_seen).and_then(|deadline| {
+            SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(deadline))
+                .map(|end| end.min(SystemTime::now() + policy.grace()))
+        });
+
+        if changed && !cfg!(test) {
+            settings.save();
+        }
+    }
+
+    fn restore_keshii_policy(&mut self, settings: &mut Settings) {
+        if self.keshii_policy_initialized || !self.keshii_policy_enabled() {
+            return;
+        }
+
+        self.keshii_policy_initialized = true;
+
+        if let Some(signed) = settings.keshii_signed_policy.as_ref() {
+            match signed.verify().and_then(|policy| {
+                aurora_updater::keshii_policy::validate_revision(&policy, settings.keshii_policy_revision)?;
+                Ok(policy)
+            }) {
+                Ok(policy) => {
+                    self.keshii_policy = Some(policy);
+                    self.follow_keshii_policy(settings);
+                }
+                Err(error) => {
+                    log::warn!("Rejected cached Keshii policy: {error:#}");
+                }
+            }
+        }
+    }
+
+    pub fn present_keshii_expiry(&mut self, at_login: bool) {
+        if !self.keshii_policy_enabled() {
+            return;
+        }
+
+        let Some(deadline) = self.keshii_policy_deadline else {
+            self.keshii_policy_notice = None;
+            return;
+        };
+
+        if !at_login {
+            self.keshii_policy_notice = None;
+            return;
+        }
+
+        let expired = SystemTime::now() >= deadline;
+        let notice = (deadline, expired);
+
+        if self.keshii_policy_notice != Some(notice) {
+            self.keshii_policy_notice = Some(notice);
+            self.open = true;
+        }
+    }
+
+    fn refresh_keshii_policy(&mut self, runtime: &tokio::runtime::Handle) {
+        if !self.keshii_policy_enabled() || self.keshii_policy_pending {
+            return;
+        }
+
+        self.keshii_policy_pending = true;
+        let tx = self.tx.clone();
+
+        runtime.spawn(async move {
+            let result = match tokio::time::timeout(Duration::from_secs(8), aurora_updater::keshii_policy::fetch()).await {
+                Ok(Ok(policy)) => Ok(policy),
+                Ok(Err(error)) => {
+                    log::warn!("Keshii release policy: {error:#}");
+                    Err(Failure::Network)
+                }
+                Err(_) => Err(Failure::Network),
+            };
+
+            let _ = tx.send(Event::KeshiiPolicyChecked(result));
+        });
+    }
+
     pub fn busy(&self) -> bool {
         matches!(self.state, State::Checking | State::Downloading(_) | State::Handoff)
     }
     /// The update is needed to sign in: below the minimum, grace over.
     pub fn required(&self) -> bool {
+        if self.keshii_policy_enabled() {
+            return self.keshii_policy_deadline.is_some_and(|deadline| SystemTime::now() >= deadline);
+        }
+
         self.release.as_ref().is_some_and(|r| r.required) && self.grace_left().is_none()
     }
 
@@ -234,6 +365,10 @@ impl Updater {
     }
 
     fn grace_left_at(&self, now: SystemTime) -> Option<Duration> {
+        if self.keshii_policy_enabled() {
+            return self.keshii_policy_deadline?.duration_since(now).ok().filter(|left| !left.is_zero());
+        }
+
         self.release.as_ref().filter(|r| r.required)?;
         self.grace_until?.duration_since(now).ok().filter(|left| !left.is_zero())
     }
@@ -253,13 +388,24 @@ impl Updater {
         }
     }
     pub fn blocks_login(&self) -> bool {
+        if self.keshii_policy_enabled() {
+            return self.required()
+                || !self.keshii_policy_initialized
+                || self.keshii_policy_last_check.is_none()
+                || matches!(self.state, State::Handoff);
+        }
+
         self.required() || self.policy_pending || matches!(self.state, State::Handoff)
     }
 
     pub fn login_block_reason(&self) -> Option<&'static str> {
         if self.required() {
             Some(aurora_i18n::tr!("update-login-required"))
-        } else if self.policy_pending {
+        } else if if self.keshii_policy_enabled() {
+            !self.keshii_policy_initialized || self.keshii_policy_last_check.is_none()
+        } else {
+            self.policy_pending
+        } {
             Some(aurora_i18n::tr!("update-login-checking"))
         } else if matches!(self.state, State::Handoff) {
             Some(aurora_i18n::tr!("update-restarting"))
@@ -325,6 +471,17 @@ impl Updater {
     }
 
     pub fn poll(&mut self, settings: &mut Settings, info: &mut LoginInfo, runtime: &tokio::runtime::Handle) -> bool {
+        self.restore_keshii_policy(settings);
+
+        if self.keshii_policy_enabled()
+            && !self.keshii_policy_pending
+            && self
+                .keshii_policy_last_check
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(60))
+        {
+            self.refresh_keshii_policy(runtime);
+        }
+
         info.can_check_updates = self.enabled;
         // Joining the Beta channel shows its newest beta now; leaving it
         // forgets an offered beta (a stable newer than the installed one
@@ -389,6 +546,39 @@ impl Updater {
                     if self.rollback_notice {
                         self.state = State::Rollback;
                         self.open = true;
+                    }
+                }
+                Event::KeshiiPolicyChecked(result) => {
+                    self.keshii_policy_pending = false;
+                    self.keshii_policy_last_check = Some(Instant::now());
+
+                    if let Ok(signed) = result {
+                        let accepted = signed.verify().and_then(|policy| {
+                            aurora_updater::keshii_policy::validate_revision(&policy, settings.keshii_policy_revision)?;
+
+                            aurora_updater::keshii_policy::validate_transition(&policy, self.keshii_policy.as_ref())?;
+
+                            Ok(policy)
+                        });
+
+                        match accepted {
+                            Ok(policy) => {
+                                let changed = self.keshii_policy.as_ref() != Some(&policy);
+
+                                settings.keshii_policy_revision = policy.revision;
+                                settings.keshii_signed_policy = Some(signed);
+                                self.keshii_policy = Some(policy);
+
+                                self.follow_keshii_policy(settings);
+
+                                if changed && !cfg!(test) {
+                                    settings.save();
+                                }
+                            }
+                            Err(error) => {
+                                log::warn!("Rejected Keshii policy: {error:#}");
+                            }
+                        }
                     }
                 }
                 Event::Progress(p) => {
@@ -889,5 +1079,81 @@ mod tests {
         assert_eq!(matches!(prepare_failure(&read_only), Failure::Protected), expected);
         let other = anyhow::anyhow!("disk full");
         assert!(matches!(prepare_failure(&other), Failure::Filesystem));
+    }
+}
+
+#[cfg(test)]
+mod keshii_enforcement_tests {
+    use super::*;
+
+    #[test]
+    fn keshii_login_enforcement() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+
+        let mut updater = Updater::new(rt.handle(), Channel::Stable);
+        updater.keshii_policy_test_enabled = true;
+        updater.state = State::Idle;
+        updater.open = false;
+
+        assert!(updater.blocks_login());
+
+        updater.keshii_policy_initialized = true;
+        assert!(updater.blocks_login());
+
+        updater.keshii_policy_last_check = Some(Instant::now());
+        assert!(!updater.blocks_login());
+
+        updater.policy_pending = true;
+        assert!(!updater.blocks_login());
+
+        updater.keshii_policy_pending = true;
+        assert!(!updater.blocks_login());
+
+        updater.keshii_policy_deadline = Some(SystemTime::now() + Duration::from_secs(604800));
+
+        assert!(!updater.required());
+        assert!(!updater.blocks_login());
+        assert!(updater.grace_left().is_some());
+
+        updater.keshii_policy_deadline = Some(SystemTime::now() - Duration::from_secs(1));
+
+        assert!(updater.required());
+        assert!(updater.blocks_login());
+        assert!(updater.grace_left().is_none());
+        assert!(updater.login_block_reason().is_some());
+
+        updater.keshii_policy_deadline = None;
+
+        assert!(!updater.required());
+        assert!(!updater.blocks_login());
+        assert!(updater.login_block_reason().is_none());
+
+        updater.state = State::Handoff;
+        assert!(updater.blocks_login());
+    }
+
+    #[test]
+    fn keshii_expiry_notices_do_not_interrupt_active_sessions() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+
+        let mut updater = Updater::new(rt.handle(), Channel::Stable);
+        updater.keshii_policy_test_enabled = true;
+        updater.open = false;
+
+        updater.keshii_policy_deadline = Some(SystemTime::now() - Duration::from_secs(1));
+
+        updater.present_keshii_expiry(false);
+        assert!(!updater.open);
+
+        updater.present_keshii_expiry(true);
+        assert!(updater.open);
+
+        updater.open = false;
+        updater.present_keshii_expiry(true);
+        assert!(!updater.open);
+
+        updater.present_keshii_expiry(false);
+        updater.present_keshii_expiry(true);
+        assert!(updater.open);
     }
 }

@@ -9,9 +9,9 @@ use semver::Version;
 use serde::Deserialize;
 use std::time::Duration;
 
-pub const RELEASES: &str = "https://api.github.com/repos/Aurora-Viewer/Aurora-Viewer/releases?per_page=100";
-pub const RELEASE_PAGE: &str = "https://github.com/Aurora-Viewer/Aurora-Viewer/releases";
-const DOWNLOADS: &str = "https://github.com/Aurora-Viewer/Aurora-Viewer/releases/download";
+pub const RELEASES: &str = "https://api.github.com/repos/etherealkeshii/Aurora-Viewer/releases?per_page=100";
+pub const RELEASE_PAGE: &str = "https://github.com/etherealkeshii/Aurora-Viewer/releases";
+const DOWNLOADS: &str = "https://github.com/etherealkeshii/Aurora-Viewer/releases/download";
 pub const POLICY: &str = "aurora-update-policy.json";
 pub const MAX_ARCHIVE: u64 = 2 * 1024 * 1024 * 1024;
 /// How long an installation below a new minimum may still sign in, when
@@ -238,7 +238,12 @@ impl Source {
                 let v = version(&r.tag_name)?;
                 // GitHub's pre-release flag must agree with the version: a
                 // stable number marked pre-release (or the reverse) is skipped.
-                (r.tag_name.starts_with('v') && !r.draft && r.prerelease == !v.pre.is_empty() && channel.accepts(&v)).then_some((v, r))
+                let eligible = if self.loopback {
+                    r.tag_name.starts_with('v') && r.prerelease == !v.pre.is_empty() && channel.accepts(&v)
+                } else {
+                    r.tag_name.starts_with('v') && r.tag_name.ends_with("-Keshii") && !r.prerelease && v.build.is_empty()
+                };
+                (!r.draft && eligible).then_some((v, r))
             })
             .filter(|(v, _)| super::is_newer(&v.to_string(), current))
             .collect();
@@ -318,10 +323,16 @@ impl Source {
         let mut maintenance = super::Maintenance::default();
         if let Some(policy) = &signed.policy {
             let policy: Policy = serde_json::from_slice(policy)?;
-            ensure!(policy.schema == 1 && policy.version == v.to_string(), "incompatible update policy");
+            let expected_version = r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name);
+            ensure!(
+                policy.schema == 1 && policy.version == expected_version,
+                "incompatible update policy"
+            );
             maintenance.clear_cache = threshold_applies(policy.cache_invalidation_before.as_deref(), current, &v)?;
             maintenance.reset_settings = threshold_applies(policy.settings_reset_before.as_deref(), current, &v)?;
-            if let Some(min) = policy.minimum_supported_version {
+            if self.loopback
+                && let Some(min) = policy.minimum_supported_version
+            {
                 let min = version(&min).context("invalid minimum supported version")?;
                 ensure!(
                     min.pre.is_empty() && min.build.is_empty() && !min.cmp_precedence(&v).is_gt(),
@@ -330,14 +341,16 @@ impl Source {
                 required = version(current).is_some_and(|c| c.cmp_precedence(&min).is_lt());
                 minimum = Some(min.to_string());
             }
-            if let Some(hours) = policy.grace_hours {
+            if self.loopback
+                && let Some(hours) = policy.grace_hours
+            {
                 ensure!(hours <= MAX_GRACE_HOURS, "invalid grace period");
                 grace = Duration::from_secs(hours * 3600);
             }
         }
         Ok(Release {
+            version: r.tag_name.strip_prefix('v').unwrap_or(&r.tag_name).to_string(),
             tag: r.tag_name,
-            version: v.to_string(),
             notes: r.body.unwrap_or_default(),
             url: r.html_url,
             sha256: archive.is_some().then_some(signed.sha256),
@@ -351,7 +364,8 @@ impl Source {
 }
 
 pub fn version(value: &str) -> Option<Version> {
-    Version::parse(value.strip_prefix('v').unwrap_or(value)).ok()
+    let value = value.strip_prefix('v').unwrap_or(value);
+    Version::parse(value.strip_suffix("-Keshii").unwrap_or(value)).ok()
 }
 
 /// The file whose signed `.sha256` vouches for a release on this system:
@@ -359,7 +373,12 @@ pub fn version(value: &str) -> Option<Version> {
 /// viewer still points only to a genuine release).
 fn signed_name(tag: &str) -> Option<String> {
     if cfg!(target_os = "macos") {
-        Some(format!("Aurora-Viewer-{tag}-macos-arm64.dmg"))
+        Some(if tag.ends_with("-Keshii") {
+            let tag = tag.strip_prefix('v').unwrap_or(tag);
+            format!("Aurora-Viewer-{tag}-macOS-arm64.dmg")
+        } else {
+            format!("Aurora-Viewer-{tag}-macos-arm64.dmg")
+        })
     } else {
         package_name(tag)
     }
@@ -369,6 +388,11 @@ fn signed_name(tag: &str) -> Option<String> {
 /// the Windows ZIP, or the Linux tar.gz. macOS installs its application by
 /// hand, so a release offers it no package to install.
 fn package_name(tag: &str) -> Option<String> {
+    let tag = if tag.ends_with("-Keshii") {
+        tag.strip_prefix('v').unwrap_or(tag)
+    } else {
+        tag
+    };
     if cfg!(windows) {
         Some(format!("Aurora-Viewer-{tag}-windows-x64.zip"))
     } else if cfg!(target_os = "linux") {
@@ -499,11 +523,35 @@ mod tests {
     }
 
     #[test]
+    fn keshii_versions_preserve_numeric_release_order() {
+        assert!(crate::is_newer("v0.9.14-beta.20261128.10-Keshii", "0.9.14-beta.20261128.2-Keshii"));
+        assert!(!crate::is_newer("v0.9.14-beta.20261128.2-Keshii", "0.9.14-beta.20261128.10-Keshii"));
+        assert!(!crate::is_newer("v0.9.14-beta.20261128.2-Keshii", "0.9.14-beta.20261128.2-Keshii"));
+    }
+
+    #[test]
+    fn keshii_packages_match_published_asset_names() {
+        let tag = "v0.9.14-beta.20261128.1-Keshii";
+
+        let expected = if cfg!(windows) {
+            Some("Aurora-Viewer-0.9.14-beta.20261128.1-Keshii-windows-x64.zip")
+        } else if cfg!(target_os = "linux") {
+            Some("Aurora-Viewer-0.9.14-beta.20261128.1-Keshii-linux-x64.tar.gz")
+        } else if cfg!(target_os = "macos") {
+            Some("Aurora-Viewer-0.9.14-beta.20261128.1-Keshii-macOS-arm64.dmg")
+        } else {
+            None
+        };
+
+        assert_eq!(signed_name(tag).as_deref(), expected);
+    }
+
+    #[test]
     fn reject_external_or_credentialled_assets() {
         let production = Source::default();
         assert!(
             production
-                .validate_url("https://github.com/Aurora-Viewer/Aurora-Viewer/releases")
+                .validate_url("https://github.com/etherealkeshii/Aurora-Viewer/releases")
                 .is_ok()
         );
         for url in [

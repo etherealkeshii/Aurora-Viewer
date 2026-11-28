@@ -11,6 +11,7 @@
 pub mod feed;
 pub mod ffmpeg_pack;
 pub mod install;
+pub mod keshii_policy;
 pub mod media_pack;
 pub mod package;
 pub mod signature;

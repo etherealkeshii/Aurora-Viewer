@@ -611,6 +611,11 @@ pub struct Settings {
     /// is above it: its grace period to sign in counts from there (#3014).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_grace: Option<crate::updater::GraceStart>,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub keshii_update_grace: std::collections::BTreeMap<String, u64>,
+    pub keshii_policy_revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keshii_signed_policy: Option<aurora_updater::keshii_policy::SignedPolicy>,
     pub area_search: area_search::AreaSearch,
     pub crash_reports: CrashReports,
     /// Firestorm Language: default follows the OS.
@@ -2540,6 +2545,9 @@ impl Default for Settings {
             update_channel: aurora_updater::feed::Channel::Stable,
             ignored_update: String::new(),
             update_grace: None,
+            keshii_update_grace: Default::default(),
+            keshii_policy_revision: 0,
+            keshii_signed_policy: None,
             area_search: Default::default(),
             crash_reports: CrashReports::Ask,
             language: "default".into(),
