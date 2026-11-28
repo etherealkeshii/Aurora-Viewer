@@ -711,9 +711,7 @@ fn received(ui: &mut egui::Ui, c: &Ctx, f: &Friend, slot: Rect) -> bool {
         );
         let on = f.rights_has & bit != 0;
         super::radar::icon(ui, icon, cell, 12.0, if on { p.teal } else { p.muted_dim.gamma_multiply(0.7) });
-        let locatable = bit == rights::MAP_LOCATION
-            && c.world.social.can_map_friend(f.id)
-            && context::can_show_on_map(c.world);
+        let locatable = bit == rights::MAP_LOCATION && c.world.social.can_map_friend(f.id) && context::can_show_on_map(c.world);
         let sense = if locatable { Sense::click() } else { Sense::hover() };
         let resp = ui.interact(cell, ui.scope_id().with(("people-received", f.id, i)), sense);
         if locatable {
