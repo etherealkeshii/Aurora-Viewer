@@ -1146,13 +1146,9 @@ fn loading(ui: &mut egui::Ui, p: &Palette) {
 
 /// Text with emoji and clickable links, line by line.
 fn rich(ui: &mut egui::Ui, p: &Palette, emoji: &mut super::emoji::Emoji, world: &World, want_names: &mut HashSet<Uuid>, text: &str) {
-    for line in text.lines() {
-        if line.is_empty() {
-            ui.add_space(6.0);
-        } else {
-            super::chat::chat_text(ui, p, emoji, world, want_names, line, 12.5, p.ink, false);
-        }
-    }
+    super::chat::select::document(ui, p, "profile-rich-text", text, |ui, line| {
+        super::chat::chat_text(ui, p, emoji, world, want_names, line, 12.5, p.ink, false);
+    });
 }
 
 /// Bordered text: read with links, or edited (own profile).
@@ -2642,6 +2638,63 @@ fn notes_tab(ui: &mut egui::Ui, c: &TabCtx, w: &mut Window, profile: Option<&Ava
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_rich_text_copies_colour_emoji() {
+        use crate::ui::widgets::elide_tests::Frames;
+        use egui::{Event, Key, Modifiers, PointerButton};
+
+        let world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let p = crate::theme::Theme::default().palette();
+        let mut emoji = super::super::emoji::Emoji::load();
+        assert!(emoji.has('😀') && emoji.has('🐺'), "the colour emoji font is loaded");
+        for text in ["Before 😀 after 🐺 end", "Before 😀 after\n\nAnother 🐺 line"] {
+            let mut frames = Frames::new();
+            let mut names = HashSet::new();
+            let mut draw = |ui: &mut egui::Ui| rich(ui, &p, &mut emoji, &world, &mut names, text);
+            frames.run(Vec::new(), &mut draw);
+            let texts = frames.run(Vec::new(), &mut draw);
+            let at = texts
+                .iter()
+                .find(|t| t.source.starts_with("Before"))
+                .expect("profile text")
+                .rect
+                .center();
+            for pressed in [true, false] {
+                frames.run(
+                    vec![
+                        Event::PointerMoved(at),
+                        Event::PointerButton {
+                            pos: at,
+                            button: PointerButton::Primary,
+                            pressed,
+                            modifiers: Modifiers::NONE,
+                        },
+                    ],
+                    &mut draw,
+                );
+            }
+            frames.run(
+                vec![Event::Key {
+                    key: Key::A,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Modifiers::COMMAND,
+                }],
+                &mut draw,
+            );
+            let (_, output) = frames.run_with_output(vec![Event::Copy], &mut draw);
+            assert!(
+                output
+                    .commands
+                    .iter()
+                    .any(|c| matches!(c, egui::OutputCommand::CopyText(s) if s == text)),
+                "copy must retain the entire profile including emoji and paragraph breaks: {text:?}, got {:?}",
+                output.commands
+            );
+        }
+    }
 
     /// New with picks already listed: the draft is listed in the same
     /// frame, so the selection stays on it instead of going back to the
