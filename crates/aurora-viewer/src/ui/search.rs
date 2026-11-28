@@ -69,6 +69,9 @@ pub enum SearchAction {
     Select(Tab, Key),
     /// A column header was clicked.
     Sort(Tab, usize),
+    PlacesSort(crate::world::search::web_places::Sort),
+    WebPlaceTeleport(Key),
+    WebPlaceMap(Key),
     /// onBtnTeleport: teleportViaLocation + trackLocation, then
     /// FSLegacySearchActionOnTeleport.
     Teleport(DVec3),
@@ -203,6 +206,148 @@ fn place_categories() -> [(i8, &'static str); 15] {
         (13, aurora_i18n::tr!("search-place-other")),
         (14, aurora_i18n::tr!("search-place-rental")),
     ]
+}
+
+fn available_place_categories(web: bool) -> Vec<(i8, &'static str)> {
+    place_categories()
+        .into_iter()
+        .filter(|(id, _)| !web || crate::world::search::web_place_category(*id).is_some())
+        .collect()
+}
+
+fn web_maturity_combo(ui: &mut egui::Ui, id: &str, boxes: &mut RatingBoxes, access: AgentAccess) -> bool {
+    let mut levels = vec![(
+        RatingBoxes {
+            pg: true,
+            mature: false,
+            adult: false,
+        },
+        aurora_i18n::tr!("common-general"),
+    )];
+    if access.can_access_mature() {
+        levels.push((
+            RatingBoxes {
+                pg: true,
+                mature: true,
+                adult: false,
+            },
+            aurora_i18n::tr!("search-places-general-moderate"),
+        ));
+    }
+    if access.can_access_adult() {
+        levels.push((
+            RatingBoxes {
+                pg: true,
+                mature: true,
+                adult: true,
+            },
+            aurora_i18n::tr!("search-places-all-maturity"),
+        ));
+        levels.push((
+            RatingBoxes {
+                pg: false,
+                mature: false,
+                adult: true,
+            },
+            aurora_i18n::tr!("common-adult"),
+        ));
+    }
+    combo(ui, id, boxes, &levels, 180.0)
+}
+
+fn web_sort_combo(ui: &mut egui::Ui, id: &str, search: &crate::world::search::Search, actions: &mut Vec<SearchAction>) {
+    use crate::world::search::web_places::Sort;
+    let mut sort = search.web_places_sort();
+    let items = [
+        (Sort::Relevance, aurora_i18n::tr!("search-places-relevance")),
+        (Sort::TrafficDescending, aurora_i18n::tr!("search-places-traffic-desc")),
+        (Sort::NameAscending, aurora_i18n::tr!("search-places-name-asc")),
+        (Sort::NameDescending, aurora_i18n::tr!("search-places-name-desc")),
+    ];
+    if combo(ui, id, &mut sort, &items, 170.0) {
+        actions.push(SearchAction::PlacesSort(sort));
+    }
+}
+
+fn web_place_rating(place: &crate::world::search::web_places::Place) -> &'static str {
+    match place.maturity {
+        'a' => aurora_i18n::tr!("common-adult"),
+        'm' => aurora_i18n::tr!("common-moderate"),
+        _ => aurora_i18n::tr!("common-general"),
+    }
+}
+
+fn web_place_location(world: &crate::world::World, place: &crate::world::search::web_places::Place) -> String {
+    let Some(location) = crate::slurl::parse(&place.teleport) else {
+        return String::new();
+    };
+    if world.rlva_hides_region(&location.region) {
+        return aurora_i18n::tr!("rlva-hidden-region").to_owned();
+    }
+    format!(
+        "{} ({:.0}, {:.0}, {:.0})",
+        location.region, location.pos.x, location.pos.y, location.pos.z
+    )
+}
+
+fn web_place_details(ui: &mut egui::Ui, c: &mut Ctx, key: Key, actions: &mut Vec<SearchAction>) -> bool {
+    let Some(place) = c.world.search.list(Tab::Places).and_then(|list| list.web_results.get(&key)) else {
+        return false;
+    };
+    let p = c.p;
+    ui.horizontal_wrapped(|ui| {
+        if widgets::action_button(
+            ui,
+            p,
+            "location-filled",
+            aurora_i18n::tr!("common-teleport"),
+            ActionKind::Primary,
+            Vec2::new(0.0, 26.0),
+        )
+        .clicked()
+        {
+            actions.push(SearchAction::WebPlaceTeleport(key));
+        }
+        if widgets::action_button_if(
+            ui,
+            p,
+            "map",
+            aurora_i18n::tr!("common-map"),
+            ActionKind::Flat,
+            Vec2::new(0.0, 26.0),
+            !c.world.rlva.has("showworldmap"),
+        )
+        .clicked()
+        {
+            actions.push(SearchAction::WebPlaceMap(key));
+        }
+    });
+    egui::ScrollArea::vertical()
+        .id_salt(("web-place-details", key))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            if let Key::Id(id) = key
+                && let Some(snapshot) = c.world.profiles.parcels.get(&id).map(|d| d.snapshot).filter(|id| !id.is_nil())
+            {
+                c.wanted_images.insert(snapshot);
+                let width = ui.available_width();
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(width, width * 0.56), Sense::hover());
+                super::place_card::picture(ui, p, c.images.get(&snapshot), rect, 36.0);
+            }
+            ui.label(RichText::new(&place.name).size(18.0).color(p.ink));
+            ui.label(RichText::new(web_place_location(c.world, place)).color(p.muted));
+            ui.horizontal(|ui| {
+                widgets::maturity_badge(ui, p, web_place_rating(place), 16.0);
+                ui.label(web_place_rating(place));
+            });
+            if let Some(traffic) = place.traffic {
+                ui.label(format!("{}: {}", aurora_i18n::tr!("search-col-traffic"), traffic));
+            }
+            if let Some(description) = &place.description {
+                ui.label(description);
+            }
+        });
+    true
 }
 
 /// "events_category" of panel_fs_search_legacy_events.xml (value, label).
@@ -343,7 +488,9 @@ fn zoned_date_text(unix: i64, offset: i64, zone: &str) -> String {
 
 /// "> 100 found" when a next page exists, else the number of rows.
 fn count_text(list: &List) -> String {
-    if list.has_next {
+    if let Some(total) = list.web_total {
+        aurora_i18n::tr!("search-found", count = total as i64)
+    } else if list.has_next {
         aurora_i18n::tr!("search-found-more", count = list.rows.len() as i64)
     } else {
         aurora_i18n::tr!("search-found", count = list.rows.len() as i64)
@@ -363,6 +510,9 @@ fn status_text(status: &Status) -> String {
         Status::NoCategory => aurora_i18n::tr!("search-no-event-category").to_owned(),
         Status::NoQuery => aurora_i18n::tr!("search-no-query").to_owned(),
         Status::NoContent => aurora_i18n::tr!("search-no-content").to_owned(),
+        Status::WebPlacesFailed => aurora_i18n::tr!("search-places-service-error").to_owned(),
+        Status::WebPlacesMaturity => aurora_i18n::tr!("search-places-maturity-error").to_owned(),
+        Status::WebPlacesCategory => aurora_i18n::tr!("search-places-category-error").to_owned(),
     }
 }
 
@@ -728,15 +878,26 @@ impl SearchUi {
                 });
             }
             Tab::Places => {
+                let web = c.world.search.web_places_enabled();
+                let categories = available_place_categories(web);
                 let (category, boxes) = (&mut self.places_category, &mut settings.places);
                 find |= field_row(ui, p, &mut self.texts[i], hint, &mut self.focus, |ui| {
                     let mut go = find_button(ui, p);
-                    if rating_boxes(ui, p, boxes, access) {
+                    if !web && rating_boxes(ui, p, boxes, access) {
                         saved = true;
                         go = true;
                     }
-                    go | combo(ui, "search-place-category", category, &place_categories(), 170.0)
+                    go | combo(ui, "search-place-category", category, &categories, 170.0)
                 });
+                if web {
+                    ui.horizontal_wrapped(|ui| {
+                        if web_maturity_combo(ui, "classic-places-maturity", boxes, access) {
+                            saved = true;
+                            find = true;
+                        }
+                        web_sort_combo(ui, "classic-places-sort", &c.world.search, actions);
+                    });
+                }
             }
             Tab::Classifieds => {
                 let cats = c.world.classified_categories();

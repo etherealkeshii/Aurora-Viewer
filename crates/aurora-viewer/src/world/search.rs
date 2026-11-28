@@ -9,6 +9,8 @@
 //!
 //! The queries and replies themselves are in `aurora-net/src/search.rs`.
 
+pub mod web_places;
+
 use aurora_net::NetCommand;
 use aurora_net::search::{
     self, DirQuery, DirReply, DirRows, EventInfo, EventsMode, GroupProfile, LandFilter, RESULT_PAGE_SIZE, Ratings, event_flags, status,
@@ -163,6 +165,7 @@ pub enum Key {
     /// An avatar, a group, a parcel or a classified.
     Id(Uuid),
     Event(u32),
+    Region(Uuid),
 }
 
 /// The icon of a row (Firestorm's first column).
@@ -250,6 +253,9 @@ pub enum Status {
     NoQuery,
     /// NoContentToSearch: no rating box is ticked.
     NoContent,
+    WebPlacesFailed,
+    WebPlacesMaturity,
+    WebPlacesCategory,
 }
 
 /// The result list of one tab.
@@ -281,6 +287,9 @@ pub struct List {
     land: LandFilter,
     /// A key typed in the people tab, waiting for its name.
     key_lookup: Option<(Uuid, Instant)>,
+    pub web_page: Option<usize>,
+    pub web_total: Option<usize>,
+    pub web_results: HashMap<Key, web_places::Place>,
 }
 
 impl List {
@@ -302,23 +311,26 @@ impl List {
             ratings: Ratings::default(),
             land: LandFilter::default(),
             key_lookup: None,
+            web_page: None,
+            web_total: None,
+            web_results: HashMap::new(),
         }
     }
 
     /// "…_back" enabled.
     pub fn has_back(&self) -> bool {
-        self.start > 0
+        self.web_page.map_or(self.start > 0, |page| page > 1)
     }
 
     /// The page shown, from 1.
     pub fn page(&self) -> usize {
-        self.start.max(0) as usize / RESULT_PAGE_SIZE + 1
+        self.web_page.unwrap_or(self.start.max(0) as usize / RESULT_PAGE_SIZE + 1)
     }
 
     /// The rows in display order.
     pub fn sorted(&self) -> Vec<&Row> {
         let mut rows: Vec<&Row> = self.rows.iter().collect();
-        if let Some((column, descending)) = self.sort {
+        if let Some((column, descending)) = self.sort.filter(|_| self.web_page.is_none()) {
             rows.sort_by(|a, b| {
                 let order = match column {
                     0 => crate::natural_order::cmp(&a.name, &b.name),
@@ -344,6 +356,9 @@ impl List {
     /// `find()` after the query was built: a new query id, the list emptied
     /// and "searching".
     fn begin(&mut self, query: DirQuery) -> NetCommand {
+        self.web_page = None;
+        self.web_total = None;
+        self.web_results.clear();
         self.query_id = Uuid::new_v4();
         self.start = self.start.max(0);
         self.received = 0;
@@ -631,7 +646,11 @@ impl Request {
     }
 }
 
+mod native_places;
+pub use native_places::category_parameter as web_place_category;
+
 pub struct Search {
+    web: native_places::State,
     lists: [List; 6],
     /// GroupProfileReply of selected groups and visible group rows.
     pub groups: HashMap<Uuid, GroupProfile>,
@@ -649,6 +668,7 @@ pub struct Search {
 impl Default for Search {
     fn default() -> Self {
         Search {
+            web: native_places::State::default(),
             lists: [
                 List::new(Tab::People),
                 List::new(Tab::Groups),
@@ -689,6 +709,12 @@ impl Search {
     /// onBtnFind: back to the first page (resetSearch), then `find()`.
     pub fn find(&mut self, request: Request, access: search::AgentAccess, now: Instant) {
         let tab = request.tab();
+        if self.web.enabled()
+            && let Request::Places { text, ratings, category } = &request
+        {
+            self.find_web_places(text, *ratings, *category, access);
+            return;
+        }
         if tab == Tab::Land {
             self.want_land_types();
         }
@@ -756,6 +782,10 @@ impl Search {
 
     /// onBtnNext / onBtnBack: the same query a page further or back.
     pub fn turn_page(&mut self, tab: Tab, forward: bool) {
+        if tab == Tab::Places && self.web.enabled() {
+            self.turn_web_page(forward);
+            return;
+        }
         let Some(list) = tab.list_index().and_then(|i| self.lists.get_mut(i)) else {
             return;
         };
@@ -804,6 +834,9 @@ impl Search {
             return;
         };
         list.selected = Some(key);
+        if tab == Tab::Places && matches!(key, Key::Region(_)) {
+            return;
+        }
         let cmd = match (tab, key) {
             (Tab::People, Key::Id(id)) => NetCommand::RequestProfile(id),
             (Tab::Groups, Key::Id(id)) => NetCommand::GroupProfileRequest(id),
@@ -872,6 +905,9 @@ impl Search {
         let Some(list) = tab.list_index().and_then(|i| self.lists.get_mut(i)) else {
             return;
         };
+        if list.web_page.is_some() {
+            return;
+        }
         if list.apply(reply, &self.land_types) && list.selected.is_none() {
             let first = list.sorted().first().map(|r| r.key);
             if let Some(key) = first {

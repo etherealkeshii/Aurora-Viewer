@@ -255,6 +255,9 @@ pub fn show(
         ui.vertical_centered(|ui| muted(ui, c.p, aurora_i18n::tr!("search-select-a-result")));
         return;
     };
+    if list.tab == Tab::Places && super::web_place_details(ui, c, key, actions) {
+        return;
+    }
     let row = list.rows.iter().find(|r| r.key == key);
     let row_name = row.map_or("", |r| r.name.as_str());
     match (list.tab, key) {

@@ -65,7 +65,7 @@ meshopt = "0.7.0"
 parking_lot = "0.13.0"
 # CommonMark parsing for notecard previews; MIT licensed, no HTML runtime.
 pulldown-cmark = { version = "0.13.6", default-features = false }
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["cookies", "rustls"] }
 rayon = "1.12.0"
 resvg = "0.49"
 # native file dialogs (About Land: export / import of access lists)
@@ -119,6 +119,7 @@ foldhash = "0.2.0"
 # that has it (also in .github/dependabot.yml).
 mimalloc = { version = "=0.1.50", features = ["v2"] }
 libmimalloc-sys = "=0.1.47"
+scraper = { version = "0.29.0", default-features = false }
 
 # remembered login password and the GitHub authorization of crash reports
 # (Windows Credential Manager, macOS Keychain, Secret Service on Linux)

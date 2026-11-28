@@ -37,6 +37,9 @@ pub(super) fn show(
     row: Option<&Row>,
     actions: &mut Vec<SearchAction>,
 ) {
+    if tab == Tab::Places && super::web_place_details(ui, c, key, actions) {
+        return;
+    }
     let name = row.map_or("", |r| r.name.as_str());
     match (tab, key) {
         (Tab::People, Key::Id(id)) => person(ui, c, pics, wanted_pics, id, name),

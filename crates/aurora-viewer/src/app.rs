@@ -3923,6 +3923,7 @@ impl App {
         // the search window's browser and its page, opened with the session
         // that ends here
         self.search_ui = Default::default();
+        self.world.search.set_web_places_session(None);
         self.panels.search = false;
         // Voice controls: closed, and its list (the last session's nearby
         // participants) forgotten
@@ -10710,6 +10711,9 @@ impl App {
     /// assets and region handles, folders and group names asked by the
     /// lists, region names resolved, parcel requests.
     fn update_places(&mut self) {
+        self.configure_native_places();
+        let cookie = self.media.openid.cookie();
+        self.world.search.poll_web_places(self.net.runtime(), cookie.as_ref());
         let now = Instant::now();
         if self.world.movement_complete
             && let Some(source) = self.demo_place.take()
@@ -18231,9 +18235,19 @@ impl App {
         self.world.login.as_ref().map(|l| l.session_id).filter(|id| !id.is_nil())
     }
 
+    fn configure_native_places(&mut self) {
+        let session = if self.in_world() && self.search_grid() == crate::world::search::SearchGrid::Main {
+            self.search_session()
+        } else {
+            None
+        };
+        self.world.search.set_web_places_session(session);
+    }
+
     /// What the search window asked for.
     fn apply_search_actions(&mut self, ctx: &egui::Context, actions: Vec<ui::search::SearchAction>) {
         use ui::search::SearchAction;
+        self.configure_native_places();
         let mut save = false;
         for a in actions {
             match a {
@@ -18244,8 +18258,40 @@ impl App {
                 SearchAction::Page(tab, forward) => self.world.search.turn_page(tab, forward),
                 SearchAction::Select(tab, key) => self.world.search.select(tab, key),
                 SearchAction::Sort(tab, column) => {
-                    if let Some(list) = self.world.search.list_mut(tab) {
+                    if tab == crate::world::search::Tab::Places && self.world.search.web_places_enabled() {
+                        self.world.search.sort_web_column(column);
+                    } else if let Some(list) = self.world.search.list_mut(tab) {
                         list.sort_by(column);
+                    }
+                }
+                SearchAction::PlacesSort(sort) => self.world.search.sort_web_places(sort),
+                SearchAction::WebPlaceMap(key) => {
+                    if !self.world.rlva.has("showworldmap")
+                        && let Some(location) = self
+                            .world
+                            .search
+                            .list(crate::world::search::Tab::Places)
+                            .and_then(|list| list.web_results.get(&key))
+                            .and_then(|place| crate::slurl::parse(&place.teleport))
+                    {
+                        self.world.map.show_region(&location.region, location.pos);
+                        self.show_world_map();
+                    }
+                }
+                SearchAction::WebPlaceTeleport(key) => {
+                    if let Some(location) = self
+                        .world
+                        .search
+                        .list(crate::world::search::Tab::Places)
+                        .and_then(|list| list.web_results.get(&key))
+                        .and_then(|place| crate::slurl::parse(&place.teleport))
+                        && self.teleport_to_location(location.region, location.pos)
+                    {
+                        match self.settings.search.teleport_action {
+                            1 => self.panels.search = false,
+                            2 => ui::widgets::minimize_floater(ctx, ui::search::WINDOW),
+                            _ => {}
+                        }
                     }
                 }
                 SearchAction::RefreshGroup(id) => self.send(NetCommand::GroupProfileRequest(id)),

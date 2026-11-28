@@ -14,7 +14,7 @@
 //! and its rating: the lists of the Legacy Viewer's places panels do the
 //! same for each landmark they show (LLRemoteParcelInfoProcessor).
 
-use super::{SearchAction, SearchUi, WebEnv, aurora_details, combo, event_categories, place_categories, status_text, unix_now};
+use super::{SearchAction, SearchUi, WebEnv, aurora_details, combo, event_categories, status_text, unix_now};
 use crate::settings::ClockZone;
 use crate::theme::Palette;
 use crate::ui::place_card::{self, RowSize, Thumb};
@@ -381,7 +381,9 @@ impl SearchUi {
             return None;
         }
         let n = list.rows.len();
-        Some(if list.has_next {
+        Some(if let Some(total) = list.web_total {
+            total.to_string()
+        } else if list.has_next {
             aurora_i18n::tr!("search-aurora-count-more", count = n as i64)
         } else {
             n.to_string()
@@ -542,7 +544,13 @@ impl SearchUi {
             let room = Vec2::new((ui.available_width() - count_w - 12.0).max(80.0), 28.0);
             ui.allocate_ui_with_layout(room, egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
-                if matches!(kind, Kind::All | Kind::Places | Kind::Events | Kind::Classifieds | Kind::Land) {
+                let web_places = world.search.web_places_enabled();
+                if kind == Kind::Places && web_places {
+                    if super::web_maturity_combo(ui, "aurora-places-maturity", &mut settings.aurora_ratings, access) {
+                        saved = true;
+                        find = true;
+                    }
+                } else if matches!(kind, Kind::All | Kind::Places | Kind::Events | Kind::Classifieds | Kind::Land) {
                     let boxes = &mut settings.aurora_ratings;
                     for (on, name, allowed) in [
                         (&mut boxes.pg, aurora_i18n::tr!("common-general"), true),
@@ -580,9 +588,12 @@ impl SearchUi {
                             ui,
                             "aurora-search-place-category",
                             &mut self.places_category,
-                            &place_categories(),
+                            &super::available_place_categories(web_places),
                             180.0,
                         );
+                        if web_places {
+                            super::web_sort_combo(ui, "aurora-places-sort", &world.search, actions);
+                        }
                     }
                     Kind::Classifieds => {
                         ui.add_space(6.0);
@@ -688,7 +699,9 @@ impl SearchUi {
                 results(n, lists.iter().any(|l| l.has_next))
             }
             kind => match kind.tab().and_then(|t| search.list(t)) {
-                Some(list) if self.aurora_shows(list.tab) => results(list.rows.len(), list.has_next),
+                Some(list) if self.aurora_shows(list.tab) => {
+                    results(list.web_total.unwrap_or(list.rows.len()), list.web_total.is_none() && list.has_next)
+                }
                 _ => String::new(),
             },
         }
@@ -756,7 +769,9 @@ impl SearchUi {
                             continue;
                         }
                         any = true;
-                        let total = if list.has_next {
+                        let total = if let Some(total) = list.web_total {
+                            total.to_string()
+                        } else if list.has_next {
                             aurora_i18n::tr!("search-aurora-count-more", count = rows.len() as i64)
                         } else {
                             rows.len().to_string()
@@ -851,7 +866,39 @@ impl SearchUi {
                 actions.push(action);
             }
         };
+        let web_place = (tab == Tab::Places)
+            .then(|| world.search.list(tab).and_then(|list| list.web_results.get(&row.key)))
+            .flatten();
         let resp = match (tab, row.key) {
+            (Tab::Places, _) if web_place.is_some() => {
+                let place = web_place.expect("web Places row");
+                let parcel = if let Key::Id(id) = row.key {
+                    let data = world.profiles.parcels.get(&id);
+                    if data.is_none() {
+                        ask(&mut self.aurora.asked, id, SearchAction::WantParcel(id));
+                    }
+                    data
+                } else {
+                    None
+                };
+                let snapshot = parcel.map(|d| d.snapshot).filter(|s| !s.is_nil());
+                if let Some(snapshot) = snapshot {
+                    c.wanted_images.insert(snapshot);
+                }
+                let subtitle = super::web_place_location(world, place);
+                let card = place_card::Row {
+                    thumb: Thumb::Picture(snapshot.and_then(|s| c.images.get(&s))),
+                    title: &row.name,
+                    subtitle: &subtitle,
+                    rating: Some(super::web_place_rating(place)),
+                    selected,
+                };
+                place_card::row(ui, p, size, &card, |ui| {
+                    if let Some(Value::Int(traffic)) = row.values.first() {
+                        meta(ui, p, Some("walk"), &aurora_i18n::integer(*traffic));
+                    }
+                })
+            }
             (Tab::Places | Tab::Land, Key::Id(id)) => {
                 let parcel = world.profiles.parcels.get(&id);
                 if parcel.is_none() {
