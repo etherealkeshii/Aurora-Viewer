@@ -1,12 +1,22 @@
 name: Release
-run-name: Compile and publish Aurora Viewer ${{ github.ref_name }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && 'Recover publication of' || 'Compile and publish' }} Aurora Viewer ${{ inputs.tag || github.ref_name }}
 
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*-Keshii']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Original release tag
+        required: true
+        type: string
+      run_id:
+        description: Original successful build run ID
+        required: true
+        type: string
 
 concurrency:
-  group: keshii-release-${{ github.ref }}
+  group: keshii-release-refs/tags/${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -14,8 +24,15 @@ permissions:
 
 jobs:
   authorize:
-    if: github.repository == 'etherealkeshii/Aurora-Viewer'
+    if: github.repository == 'etherealkeshii/Aurora-Viewer' && github.actor == 'etherealkeshii' && github.triggering_actor == 'etherealkeshii'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      commit: ${{ steps.source.outputs.commit }}
+      run_id: ${{ steps.source.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -25,34 +42,71 @@ jobs:
       - uses: ./.github/actions/release-admin
 
       - name: Verify distribution source
+        id: source
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_TAG: ${{ inputs.tag }}
+          RECOVERY_RUN: ${{ inputs.run_id }}
         run: |
           set -euo pipefail
 
-          if [ "$GITHUB_EVENT_NAME" != push ] || [ "$GITHUB_REF_TYPE" != tag ]; then
-            echo "::error::Keshii releases require an explicitly pushed version tag."
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            test "$GITHUB_REF" = refs/heads/keshii/distribution
+            tag="$RECOVERY_TAG"
+            run_id="$RECOVERY_RUN"
+            [[ "$run_id" =~ ^[0-9]+$ ]]
+          else
+            test "$GITHUB_EVENT_NAME" = push
+            test "$GITHUB_REF_TYPE" = tag
+            tag="$GITHUB_REF_NAME"
+            run_id="$GITHUB_RUN_ID"
           fi
 
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?-Keshii$ ]]; then
-            echo "::error::Invalid Keshii release tag."
-            exit 1
-          fi
+          [[ "$tag" =~ ^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?-Keshii$ ]]
 
           git fetch --no-tags https://github.com/etherealkeshii/Aurora-Viewer.git refs/heads/keshii/distribution:refs/remotes/fork/keshii/distribution
 
-          tagged_commit="$(git rev-parse HEAD)"
+          commit="$(git rev-parse "refs/tags/$tag^{commit}")"
+          git merge-base --is-ancestor "$commit" refs/remotes/fork/keshii/distribution
 
-          if ! git merge-base --is-ancestor "$tagged_commit" refs/remotes/fork/keshii/distribution; then
-            echo "::error::Release commit is not part of the Keshii distribution branch."
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" |
+              jq -e --arg tag "$tag" --arg commit "$commit" '
+                .head_branch == $tag and
+                .head_sha == $commit and
+                .head_repository.full_name == "etherealkeshii/Aurora-Viewer" and
+                .actor.login == "etherealkeshii" and
+                .event == "push" and
+                .path == ".github/workflows/release.yml" and
+                .status == "completed" and
+                .conclusion == "failure"
+              '
+
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?filter=latest&per_page=100" |
+              jq -se '
+                [.[].jobs[]] as $jobs |
+                all(["authorize", "windows", "linux", "macos"][];
+                  . as $name |
+                  any($jobs[]; .name == $name and .conclusion == "success")
+                ) and
+                any($jobs[]; .name == "publish" and .conclusion == "failure")
+              '
+          else
+            test "$commit" = "$(git rev-parse HEAD)"
           fi
 
-          echo "Verified distribution commit: $tagged_commit"
+          {
+            echo "tag=$tag"
+            echo "commit=$commit"
+            echo "run_id=$run_id"
+          } >> "$GITHUB_OUTPUT"
+          echo "Verified distribution commit: $commit"
 
 
   windows:
     needs: authorize
+    if: github.event_name == 'push'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -223,17 +277,37 @@ jobs:
 
   publish:
     needs: [authorize, windows, linux, macos]
-    if: ${{ success() && github.repository == 'etherealkeshii/Aurora-Viewer' && github.event_name == 'push' && github.ref_type == 'tag' && github.actor == 'etherealkeshii' && github.triggering_actor == 'etherealkeshii' }}
+    if: >-
+      ${{
+        always() && !cancelled() &&
+        needs.authorize.result == 'success' &&
+        github.repository == 'etherealkeshii/Aurora-Viewer' &&
+        github.actor == 'etherealkeshii' &&
+        github.triggering_actor == 'etherealkeshii' &&
+        (
+          (github.event_name == 'push' &&
+           github.ref_type == 'tag' &&
+           needs.windows.result == 'success' &&
+           needs.linux.result == 'success' &&
+           needs.macos.result == 'success') ||
+          (github.event_name == 'workflow_dispatch' &&
+           github.ref == 'refs/heads/keshii/distribution' &&
+           needs.windows.result == 'skipped' &&
+           needs.linux.result == 'skipped' &&
+           needs.macos.result == 'skipped')
+        )
+      }}
     runs-on: ubuntu-latest
     environment: keshii-release
     permissions:
       contents: write
       actions: read
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ needs.authorize.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ needs.authorize.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -243,16 +317,22 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-windows
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.authorize.outputs.run_id }}
 
       - name: Download Linux files
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-linux
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.authorize.outputs.run_id }}
 
       - name: Download macOS files
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: release-macos
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.authorize.outputs.run_id }}
 
       - name: Verify release files
         shell: bash
